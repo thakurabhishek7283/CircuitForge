@@ -6,8 +6,30 @@ on:
   pull_request:
 
 jobs:
+  ngspice:
+    name: ngspice (native + WASM, pinned)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Both builds take minutes and change only with the pin, the scripts or the patches.
+      - uses: actions/cache@v4
+        with:
+          path: third_party/ngspice/dist
+          key: ngspice-dist-${{ hashFiles('third_party/ngspice/pin.env', 'third_party/ngspice/*.sh', 'third_party/ngspice/patches/**') }}
+      - name: Native ngspice (pinned source; the sim_runner engine)
+        run: bash third_party/ngspice/build-native.sh
+      - name: ngspice WASM (pinned emsdk image; the browser engine)
+        run: bash third_party/ngspice/build-wasm.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ngspice-dist
+          path: third_party/ngspice/dist
+          include-hidden-files: true
+          retention-days: 7
+
   core:
-    name: circuit-core, bindings, parity, codegen
+    name: circuit-core, bindings, parity, codegen, simulation
+    needs: ngspice
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -49,3 +71,23 @@ jobs:
         run: bash tools/codegen/run.sh --check
       - name: Generated models accept core output
         run: .venv/bin/python -m pytest -q tools/codegen
+
+      # Uses the bindings and the registry bundle built by the parity step above.
+      - uses: actions/download-artifact@v4
+        with:
+          name: ngspice-dist
+          path: third_party/ngspice/dist
+      - name: Simulation tests (every part, demo circuit, native vs WASM parity)
+        env:
+          REQUIRE_NGSPICE: "1"
+        run: |
+          chmod +x third_party/ngspice/dist/native/bin/*
+          .venv/bin/python -m pytest -q tools/sim
+      - name: Web worker tests
+        working-directory: apps/web
+        env:
+          REQUIRE_NGSPICE: "1"
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx vitest run

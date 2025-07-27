@@ -381,13 +381,21 @@ interface SimApi {
 }
 interface SimResult {
   hash: string;
-  vectors: { name: string; unit: "V" | "A" | "Hz" | "s"; data: Float64Array }[]; // transferred, not copied
-  meas: Record<string, number>;
-  status: "ok" | "no_convergence" | "singular_matrix" | "timeout";
+  vectors: {
+    name: string;                         // canonical: v(n_out), i(v1), @r1[i], time, frequency, v-sweep
+    analysis: "op" | "dc" | "ac" | "tran"; // one plot per analysis; v(n_out) exists in each
+    unit: "V" | "A" | "Hz" | "s";
+    data: Float64Array;                   // transferred, not copied; real part
+    imag?: Float64Array;                  // complex (AC) vectors
+  }[];
+  meas: Record<string, number>;           // a failed measurement is absent
+  status: "ok" | "no_convergence" | "singular_matrix" | "timeout" | "error"; // error: deck rejected
   log: string;
   ms: number;
 }
 ```
+
+- `.meas` cards stay in the netlist (so the hash covers them), but both drivers lift them out and replay them after `run` as interactive `meas` commands against the plot of their own analysis: ngspice 47 evaluates deck `.meas` cards only for the last analysis that ran, and not at all with `-b -r`. Vectors inside model subcircuits are never returned.
 
 - ngspice is built with Emscripten in shared-library mode (`ngSpice_Init`, `ngSpice_Circ`, `ngSpice_Command`, `ngGet_Vec_Info`). It runs synchronously inside the worker, so no pthreads and no COOP/COEP headers are needed.
 - The WASM file is lazy-loaded after first paint and cached by the service worker.

@@ -16,4 +16,5 @@ limits: {v_supply_max: 32, i_out_max: 0.02}
 spice:
   include: models/lm358.lib
   unit_line: "X{refdes}_{unit} {INP} {INM} {VCC} {VEE} {OUT} LM358"
+symbol: symbols/opamp.svg
 teach: "Runs from a single supply (VEE on GND); its output reaches down to about 0 V but only to VCC − 1.5 V."

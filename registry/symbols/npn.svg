@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+  <circle cx="23" cy="20" r="14"/>
+  <path d="M0 20H16M16 10V30M16 15L30 7V0M16 25L30 33V40"/>
+  <path d="M30 33L22.6 31.6L25.4 27.4Z" fill="currentColor"/>
+  <circle data-pin="B" cx="0" cy="20" r="0"/>
+  <circle data-pin="C" cx="30" cy="0" r="0"/>
+  <circle data-pin="E" cx="30" cy="40" r="0"/>
+</svg>

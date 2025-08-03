@@ -1,0 +1,569 @@
+{
+  "type": "object",
+  "properties": {
+    "rev": {
+      "type": "integer",
+      "format": "uint64",
+      "minimum": 0
+    },
+    "parts": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/PartInstance"
+      }
+    },
+    "nets": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Net"
+      }
+    },
+    "blocks": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/Block"
+      }
+    },
+    "analyses": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/$defs/Analysis"
+      },
+      "description": "Present when `patch.analyses_changed`."
+    },
+    "hints": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/$defs/LayoutHint"
+      },
+      "description": "Present when `patch.hints_changed`."
+    }
+  },
+  "required": [
+    "rev",
+    "parts",
+    "nets",
+    "blocks"
+  ],
+  "description": "The current state of everything a [`Patch`] names, so a UI mirror can update itself without\nreading the whole circuit (LLD §10). Removed ids are in the patch itself.",
+  "title": "PatchData",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "PartInstance": {
+      "type": "object",
+      "properties": {
+        "refdes": {
+          "type": "string"
+        },
+        "part": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Quantity"
+          },
+          "description": "Every param declared by the registry part, keyed by name (\"resistance\" -> 10kΩ)."
+        },
+        "block": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "$ref": "#/$defs/Origin"
+        },
+        "pinned": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Placement"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "refdes",
+        "part",
+        "params",
+        "origin"
+      ]
+    },
+    "Quantity": {
+      "type": "object",
+      "properties": {
+        "si": {
+          "type": "number",
+          "format": "double"
+        },
+        "unit": {
+          "$ref": "#/$defs/Unit"
+        },
+        "display": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "si",
+        "unit",
+        "display"
+      ],
+      "description": "A parsed physical value. `display` is canonical and round-trips exactly through [`parse_quantity`]."
+    },
+    "Unit": {
+      "type": "string",
+      "enum": [
+        "ohm",
+        "farad",
+        "henry",
+        "volt",
+        "ampere",
+        "hertz",
+        "second",
+        "watt",
+        "unitless"
+      ]
+    },
+    "Origin": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "job_id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "llm"
+            }
+          },
+          "required": [
+            "kind",
+            "job_id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "user"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "template"
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ]
+        }
+      ]
+    },
+    "Placement": {
+      "type": "object",
+      "properties": {
+        "x": {
+          "type": "number",
+          "format": "double"
+        },
+        "y": {
+          "type": "number",
+          "format": "double"
+        },
+        "rot": {
+          "type": "integer",
+          "format": "uint16",
+          "minimum": 0,
+          "maximum": 65535,
+          "description": "Degrees: 0, 90, 180 or 270.",
+          "default": 0
+        },
+        "flip": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "x",
+        "y"
+      ]
+    },
+    "Net": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "pins": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/PinRef"
+          }
+        },
+        "kind": {
+          "$ref": "#/$defs/NetKind"
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "pins",
+        "kind"
+      ]
+    },
+    "PinRef": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_]+\\.[A-Za-z0-9_]+$",
+      "description": "Part pin as REFDES.PIN, e.g. \"R3.1\" or \"U1.OUT_A\"."
+    },
+    "NetKind": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "signal"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "volts": {
+              "type": "number",
+              "format": "double"
+            },
+            "kind": {
+              "type": "string",
+              "const": "power"
+            }
+          },
+          "required": [
+            "kind",
+            "volts"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "ground"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      ]
+    },
+    "Block": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/BlockRole"
+        },
+        "title": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SpecTarget"
+          }
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/BlockPort"
+          }
+        },
+        "status": {
+          "$ref": "#/$defs/BlockStatus"
+        },
+        "template": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "title",
+        "spec",
+        "ports",
+        "status"
+      ]
+    },
+    "BlockRole": {
+      "type": "string",
+      "enum": [
+        "supply",
+        "source",
+        "bias",
+        "amplifier",
+        "buffer",
+        "filter",
+        "oscillator",
+        "comparator",
+        "load",
+        "other"
+      ]
+    },
+    "SpecTarget": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": "number",
+          "format": "double"
+        },
+        "tol_pct": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "target",
+        "tol_pct"
+      ]
+    },
+    "BlockPort": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "direction": {
+          "$ref": "#/$defs/PortDirection"
+        },
+        "net": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "direction",
+        "net"
+      ],
+      "description": "A named interface of a block, bound to the net that carries it (checked by ERC009)."
+    },
+    "PortDirection": {
+      "type": "string",
+      "enum": [
+        "input",
+        "output",
+        "bidir",
+        "power_pos",
+        "power_neg",
+        "ground"
+      ]
+    },
+    "BlockStatus": {
+      "type": "string",
+      "enum": [
+        "planned",
+        "composing",
+        "verified",
+        "committed",
+        "failed"
+      ]
+    },
+    "Analysis": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "op"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "start": {
+              "type": "number",
+              "format": "double"
+            },
+            "stop": {
+              "type": "number",
+              "format": "double"
+            },
+            "step": {
+              "type": "number",
+              "format": "double"
+            },
+            "type": {
+              "type": "string",
+              "const": "dc"
+            }
+          },
+          "required": [
+            "type",
+            "source",
+            "start",
+            "stop",
+            "step"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "points_per_decade": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "f_start": {
+              "type": "number",
+              "format": "double"
+            },
+            "f_stop": {
+              "type": "number",
+              "format": "double"
+            },
+            "type": {
+              "type": "string",
+              "const": "ac"
+            }
+          },
+          "required": [
+            "type",
+            "points_per_decade",
+            "f_start",
+            "f_stop"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t_step": {
+              "type": "number",
+              "format": "double"
+            },
+            "t_stop": {
+              "type": "number",
+              "format": "double"
+            },
+            "type": {
+              "type": "string",
+              "const": "tran"
+            }
+          },
+          "required": [
+            "type",
+            "t_step",
+            "t_stop"
+          ]
+        }
+      ]
+    },
+    "LayoutHint": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "dir": {
+              "$ref": "#/$defs/Direction"
+            },
+            "kind": {
+              "type": "string",
+              "const": "flow"
+            }
+          },
+          "required": [
+            "kind",
+            "dir"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            },
+            "b": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "near"
+            }
+          },
+          "required": [
+            "kind",
+            "a",
+            "b"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "block": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string",
+              "const": "group"
+            }
+          },
+          "required": [
+            "kind",
+            "block"
+          ]
+        }
+      ]
+    },
+    "Direction": {
+      "type": "string",
+      "enum": [
+        "right",
+        "down"
+      ]
+    }
+  }
+}

@@ -9,11 +9,19 @@
       "additionalProperties": {
         "$ref": "#/$defs/PartDef"
       }
+    },
+    "symbols": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/SymbolDef"
+      },
+      "description": "Schematic symbols by id (`symbols/<id>.svg`): geometry only; the drawings ship in the\nbundle's sprite sheet."
     }
   },
   "required": [
     "version",
-    "parts"
+    "parts",
+    "symbols"
   ],
   "title": "Registry",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -87,10 +95,8 @@
           ]
         },
         "symbol": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string",
+          "description": "Schematic symbol, `symbols/<id>.svg`; its pin anchors are matched by pin name."
         },
         "breadboard": {
           "type": [
@@ -119,7 +125,8 @@
         "id",
         "category",
         "title",
-        "pins"
+        "pins",
+        "symbol"
       ]
     },
     "Category": {
@@ -257,6 +264,69 @@
       "type": "string",
       "enum": [
         "mains"
+      ]
+    },
+    "SymbolDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Size in schematic units (multiples of [`GRID`])."
+        },
+        "height": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "pins": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Anchor"
+          },
+          "description": "Pin anchors by pin name (base name for the unit pins of a multi-unit part)."
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "pins"
+      ]
+    },
+    "Anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "y": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "side": {
+          "$ref": "#/$defs/Side",
+          "description": "The edge the anchor sits on; wires leave the symbol in this direction."
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "side"
+      ]
+    },
+    "Side": {
+      "type": "string",
+      "enum": [
+        "left",
+        "right",
+        "top",
+        "bottom"
       ]
     }
   }

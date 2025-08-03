@@ -35,8 +35,13 @@ def test_bad_registry_and_snapshot_raise(reg):
         cc.Registry.from_json("{}")
     with pytest.raises(ValueError, match="unknown placeholder"):
         cc.Registry.from_yaml_docs(
-            "t", [("r.yaml", 'id: r\ncategory: R\ntitle: t\npins: [{name: "1", num: 1, type: passive}]\nspice: {line: "{x}"}\n')]
+            "t",
+            [("r.yaml", 'id: r\ncategory: R\ntitle: t\nsymbol: symbols/r.svg\npins: [{name: "1", num: 1, type: passive}]\n'
+                        'spice: {line: "{x}"}\n')],
+            [],
         )
+    with pytest.raises(ValueError, match="symbols/r.svg is missing"):
+        cc.Registry.from_yaml_docs("t", [("r.yaml", 'id: r\ncategory: R\ntitle: t\nsymbol: symbols/r.svg\npins: []\n')], [])
     with pytest.raises(ValueError, match="registry_mismatch"):
         cc.Session(reg, json.dumps({"schema_version": 1, "registry_version": "old", "rev": 0, "parts": {}, "nets": {},
                                     "blocks": {}, "analyses": [], "hints": []}))
@@ -46,6 +51,8 @@ def test_apply_unwrap_undo_and_snapshot(reg):
     s = cc.Session(reg)
     ok = cc.unwrap(s.apply(env(s, "part.add", {"refdes": "R1", "part": "resistor_th", "params": {"resistance": "4k7"}})))
     assert ok["rev"] == 1 and ok["patch"]["parts_upserted"] == ["R1"]
+    data = cc.unwrap(s.changes(json.dumps(ok["patch"])))
+    assert data["parts"]["R1"]["params"]["resistance"]["display"] == "4.7kΩ"
     with pytest.raises(cc.OpRejected) as e:
         cc.unwrap(s.apply(env(s, "part.add", {"refdes": "R1", "part": "resistor_th"})))
     assert e.value.error["code"] == "refdes_conflict"

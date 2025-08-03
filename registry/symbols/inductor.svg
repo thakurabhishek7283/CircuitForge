@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 20">
+  <path d="M0 10H10A5 5 0 0 1 20 10A5 5 0 0 1 30 10A5 5 0 0 1 40 10A5 5 0 0 1 50 10H60"/>
+  <circle data-pin="1" cx="0" cy="10" r="0"/>
+  <circle data-pin="2" cx="60" cy="10" r="0"/>
+</svg>

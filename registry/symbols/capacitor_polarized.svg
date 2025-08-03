@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 20">
+  <path d="M0 10H17M17 1V19"/>
+  <path d="M27 1Q22 10 27 19M24 10H40"/>
+  <path d="M8 2H13M10.5 -0.5V4.5"/>
+  <circle data-pin="P" cx="0" cy="10" r="0"/>
+  <circle data-pin="N" cx="40" cy="10" r="0"/>
+</svg>

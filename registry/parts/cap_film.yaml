@@ -10,4 +10,5 @@ params:
 limits: {v_max: 63}
 spice:
   line: "{refdes} {1} {2} {capacitance}"
+symbol: symbols/capacitor.svg
 teach: "Blocks DC, passes AC; its impedance is 1/(2πfC)."

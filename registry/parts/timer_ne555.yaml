@@ -15,4 +15,5 @@ limits: {v_supply_max: 16, i_out_max: 0.2}
 spice:
   include: models/ne555.lib
   line: "X{refdes} {GND} {TRIG} {OUT} {RESET} {CTRL} {THR} {DIS} {VCC} NE555"
+symbol: symbols/ne555.svg
 teach: "Output goes high when TRIG drops below VCC/3 and low when THR rises above 2·VCC/3; DIS empties the timing capacitor."

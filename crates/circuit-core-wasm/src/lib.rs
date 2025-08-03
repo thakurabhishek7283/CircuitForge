@@ -74,6 +74,12 @@ impl CoreSession {
         api::compile(&self.inner, opts)
     }
 
+    /// The current data behind a `Patch` from an `ApplyOk` → `{"ok": PatchData} | {"err": OpError}`.
+    /// The store mirrors the core through this: never the whole circuit per op (LLD §10).
+    pub fn changes(&self, patch: &str) -> String {
+        api::changes(&self.inner, patch)
+    }
+
     /// The full `Circuit` JSON.
     pub fn snapshot(&self) -> String {
         api::snapshot(&self.inner)

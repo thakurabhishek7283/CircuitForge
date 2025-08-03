@@ -43,7 +43,8 @@ def unwrap(outcome_json: str) -> Any:
 
 
 def load_registry_dir(root: str | Path) -> Registry:
-    """Load ``<root>/manifest.yaml`` and ``<root>/parts/*.yaml`` (sorted) into a Registry."""
+    """Load ``<root>/manifest.yaml``, ``<root>/parts/*.yaml`` and ``<root>/symbols/*.svg`` (sorted)
+    into a Registry."""
     root = Path(root)
     version = None
     for line in (root / "manifest.yaml").read_text(encoding="utf-8").splitlines():
@@ -51,5 +52,8 @@ def load_registry_dir(root: str | Path) -> Registry:
             version = line.split(":", 1)[1].strip().strip("\"'")
     if not version:
         raise ValueError(f"{root / 'manifest.yaml'} has no version")
-    docs = [(p.name, p.read_text(encoding="utf-8")) for p in sorted((root / "parts").glob("*.yaml"))]
-    return Registry.from_yaml_docs(version, docs)
+
+    def read(folder: str, pattern: str) -> list[tuple[str, str]]:
+        return [(p.name, p.read_text(encoding="utf-8")) for p in sorted((root / folder).glob(pattern))]
+
+    return Registry.from_yaml_docs(version, read("parts", "*.yaml"), read("symbols", "*.svg"))

@@ -14,9 +14,14 @@ pub fn registry_root() -> PathBuf {
     registry_dir::repo_root().join("registry")
 }
 
-/// Load `registry/` from disk through the real YAML loader.
+/// Load `registry/` from disk through the real YAML/SVG loader.
 pub fn registry() -> Registry {
     registry_dir::load(&registry_root())
+}
+
+/// The registry plus its sprite sheet.
+pub fn registry_sources() -> circuit_core::registry::Loaded {
+    registry_dir::load_sources(&registry_root())
 }
 
 pub fn op(name: &str, body: Value) -> Value {

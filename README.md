@@ -11,7 +11,7 @@ Spec: [docs/LLD.md](docs/LLD.md).
 | `crates/circuit-core-py` | PyO3 facade → Python package `circuit_core` |
 | `contract/schema` | JSON Schemas exported from the Rust types (generated, committed) |
 | `apps/web/src/gen`, `apps/api/tutor_api/models` | TS types / Pydantic models generated from the schemas (do not edit) |
-| `registry` | Parts (YAML), SPICE models, bundle manifest |
+| `registry` | Parts (YAML), schematic symbols (SVG), SPICE models, bundle manifest |
 | `third_party/ngspice` | The pinned ngspice: native and WASM build scripts, patches, licence notes |
 | `apps/web/src/workers` | Simulation worker (Comlink) on ngspice WASM, with the main-thread watchdog |
 | `tools/sim` | Native ngspice driver; simulation tests for every part and the demo circuit; native vs WASM parity |
@@ -41,7 +41,7 @@ cargo test --workspace                     # core tests (apply/undo properties, 
 tools/parity/run.sh                        # builds both bindings, then checks 1000 random op logs
 tools/codegen/run.sh                       # schemas -> TS + Pydantic (add --check in CI)
 node crates/circuit-core-wasm/build.mjs    # browser package in crates/circuit-core-wasm/pkg
-cargo run -p circuit-core --example bundle_registry   # registry bundle (JSON + model files) in target/registry
+cargo run -p circuit-core --example bundle_registry   # registry bundle (JSON, symbols.svg, model files) in target/registry
 .venv/Scripts/python -m pytest -q tools/sim           # every part simulated + demo circuit + native vs WASM parity
 (cd apps/web && npx vitest run && npx tsc --noEmit)   # sim worker: engine, watchdog, end to end on ngspice.wasm
 ```
@@ -53,3 +53,4 @@ After changing a wire type: `tools/codegen/run.sh`, then commit the regenerated 
 After a deliberate netlist change: `cargo insta review` (or `INSTA_UPDATE=always cargo test`) and review the diff.
 After changing the demo circuit: `UPDATE_FIXTURES=1 cargo test -p circuit-core` (refreshes the IR snapshot the simulation tests load).
 After changing a model in `registry/models`: run `tools/sim`; every part's behaviour is checked there.
+After changing a symbol in `registry/symbols`: `cargo insta review` (the sprite sheet is snapshotted) and look at it in the editor.

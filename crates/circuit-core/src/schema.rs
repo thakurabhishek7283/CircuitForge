@@ -13,8 +13,8 @@ use crate::error::OpError;
 use crate::ir::Circuit;
 use crate::ops::OpEnvelope;
 use crate::registry::Registry;
-use crate::session::ApplyOk;
 use crate::session::json_api::Outcome;
+use crate::session::{ApplyOk, PatchData};
 use crate::spice::{CompileError, CompileOpts, Netlist};
 
 /// `(file name, schema)` for each contract type, in a fixed order.
@@ -33,6 +33,7 @@ pub fn all_schemas() -> Vec<(&'static str, Value)> {
         ("registry.schema.json", v(schema_for!(Registry))),
         ("compile_opts.schema.json", v(schema_for!(CompileOpts))),
         ("apply_result.schema.json", v(schema_for!(Outcome<ApplyOk, OpError>))),
+        ("patch_data.schema.json", v(schema_for!(PatchData))),
         ("trial.schema.json", v(schema_for!(Trial))),
         ("contract.schema.json", contract_schema()),
     ]
@@ -51,6 +52,7 @@ pub fn contract_schema() -> Value {
     add::<Patch>(&mut generator);
     add::<ApplyOk>(&mut generator);
     add::<Outcome<ApplyOk, OpError>>(&mut generator);
+    add::<PatchData>(&mut generator);
     add::<Trial>(&mut generator);
     add::<ErcContext>(&mut generator);
     add::<ErcIssue>(&mut generator);

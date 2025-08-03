@@ -8,12 +8,16 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::ir::PartId;
+use crate::symbol::{FLAG_GROUND, FLAG_PIN, FLAG_POWER, SymbolDef, symbol_id};
 use crate::units::{Unit, parse_quantity};
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
 pub struct Registry {
     pub version: String,
     pub parts: IndexMap<PartId, PartDef>,
+    /// Schematic symbols by id (`symbols/<id>.svg`): geometry only; the drawings ship in the
+    /// bundle's sprite sheet.
+    pub symbols: BTreeMap<String, SymbolDef>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -80,8 +84,8 @@ pub struct PartDef {
     pub dc_param: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spice: Option<SpiceDef>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub symbol: Option<String>,
+    /// Schematic symbol, `symbols/<id>.svg`; its pin anchors are matched by pin name.
+    pub symbol: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub breadboard: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -161,6 +165,13 @@ pub enum Hazard {
     Mains,
 }
 
+/// A registry loaded from its sources, with the sprite sheet the bundle ships (LLD §12 step 3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Loaded {
+    pub registry: Registry,
+    pub sprite_sheet: String,
+}
+
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 #[error("{source_name}: {message}")]
 pub struct RegistryError {
@@ -176,6 +187,48 @@ impl PartDef {
     /// Pins of one unit of a multi-unit part.
     pub fn unit_pins<'a>(&'a self, unit: &'a str) -> impl Iterator<Item = &'a PinDef> + 'a {
         self.pins.iter().filter(move |p| p.unit.as_deref() == Some(unit))
+    }
+
+    /// The symbol anchor a pin is drawn at: unit pins by their base name (`OUT_A` → `OUT`).
+    pub fn anchor_name<'a>(&self, pin: &'a PinDef) -> &'a str {
+        match &pin.unit {
+            Some(u) => pin.name.strip_suffix(u.as_str()).and_then(|s| s.strip_suffix('_')).unwrap_or(&pin.name),
+            None => &pin.name,
+        }
+    }
+
+    /// Pin anchors must match the symbol's exactly: none missing, none unknown.
+    fn check_symbol(&self, symbols: &BTreeMap<String, SymbolDef>) -> Vec<String> {
+        let Some(id) = symbol_id(&self.symbol) else {
+            return vec![format!("symbol \"{}\" must be symbols/<id>.svg with a lowercase [a-z0-9_] id", self.symbol)];
+        };
+        let Some(sym) = symbols.get(id) else {
+            return vec![format!("symbol {} is missing", self.symbol)];
+        };
+        let mut errs = Vec::new();
+        // anchor -> first pin drawn there. Only unit pins of different units may share one.
+        let mut wanted: BTreeMap<&str, &PinDef> = BTreeMap::new();
+        for p in &self.pins {
+            let a = self.anchor_name(p);
+            match wanted.get(a) {
+                Some(q) if p.unit.is_none() || q.unit.is_none() => {
+                    errs.push(format!("pins {} and {} would share anchor {a}", q.name, p.name))
+                }
+                Some(_) => {}
+                None => {
+                    wanted.insert(a, p);
+                }
+            }
+            if !sym.pins.contains_key(a) {
+                errs.push(format!("pin {} has no anchor {a} in {}", p.name, self.symbol));
+            }
+        }
+        for a in sym.pins.keys() {
+            if !wanted.contains_key(a.as_str()) {
+                errs.push(format!("anchor {a} in {} matches no pin", self.symbol));
+            }
+        }
+        errs
     }
 
     /// Resolve a `unit_line` placeholder for `unit`: the unit's own pin first, then a shared pin.
@@ -298,9 +351,11 @@ fn check_placeholders(line: &str, known: impl Fn(&str) -> bool) -> Vec<String> {
 
 impl Registry {
     /// Build and validate a registry. Each part is paired with a source name for error messages.
+    /// Every part needs a symbol whose anchors match its pins, and the flag symbols must exist.
     pub fn new(
         version: impl Into<String>,
         parts: impl IntoIterator<Item = (String, PartDef)>,
+        symbols: BTreeMap<String, SymbolDef>,
     ) -> Result<Registry, Vec<RegistryError>> {
         let mut errs = Vec::new();
         let mut map = IndexMap::new();
@@ -314,39 +369,96 @@ impl Registry {
             }
             map.insert(def.id.clone(), def);
         }
-        if errs.is_empty() { Ok(Registry { version: version.into(), parts: map }) } else { Err(errs) }
+        for (id, sym) in &symbols {
+            let source_name = format!("symbols/{id}.svg");
+            for message in sym.validate() {
+                errs.push(RegistryError { source_name: source_name.clone(), message });
+            }
+            let used = map.values().any(|p| symbol_id(&p.symbol) == Some(id.as_str()));
+            let flag = id == FLAG_GROUND || id == FLAG_POWER;
+            if flag && !sym.pins.keys().eq([FLAG_PIN]) {
+                errs.push(RegistryError { source_name, message: format!("a flag has exactly one anchor, {FLAG_PIN}") });
+            } else if !used && !flag {
+                errs.push(RegistryError { source_name, message: "no part uses this symbol".into() });
+            }
+        }
+        for flag in [FLAG_GROUND, FLAG_POWER] {
+            if !symbols.contains_key(flag) {
+                errs.push(RegistryError {
+                    source_name: format!("symbols/{flag}.svg"),
+                    message: "required flag symbol is missing".into(),
+                });
+            }
+        }
+        for p in map.values() {
+            for message in p.check_symbol(&symbols) {
+                errs.push(RegistryError { source_name: p.id.clone(), message });
+            }
+        }
+        if errs.is_empty() { Ok(Registry { version: version.into(), parts: map, symbols }) } else { Err(errs) }
     }
 
     /// Load the compiled JSON bundle (what the browser and API receive).
     pub fn from_json(json: &str) -> Result<Registry, Vec<RegistryError>> {
         let raw: Registry = serde_json::from_str(json)
             .map_err(|e| vec![RegistryError { source_name: "bundle".into(), message: e.to_string() }])?;
-        Registry::new(raw.version, raw.parts.into_values().map(|p| (p.id.clone(), p)))
+        Registry::new(raw.version, raw.parts.into_values().map(|p| (p.id.clone(), p)), raw.symbols)
     }
 
-    /// Load YAML sources, one part per document: `(source_name, yaml_text)`.
-    #[cfg(feature = "yaml")]
-    pub fn from_yaml_docs<'a>(
+    /// Load YAML part sources and SVG symbol sources: `(file_name, text)` each, symbols named
+    /// `<id>.svg`. Returns the registry and the sprite sheet of its symbols (LLD §12 step 1).
+    #[cfg(feature = "sources")]
+    pub fn from_sources<'a>(
         version: impl Into<String>,
-        docs: impl IntoIterator<Item = (&'a str, &'a str)>,
-    ) -> Result<Registry, Vec<RegistryError>> {
+        part_docs: impl IntoIterator<Item = (&'a str, &'a str)>,
+        symbol_docs: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> Result<Loaded, Vec<RegistryError>> {
         let mut errs = Vec::new();
         let mut parts = Vec::new();
-        for (name, text) in docs {
+        for (name, text) in part_docs {
             match serde_norway::from_str::<PartDef>(text) {
                 Ok(p) => parts.push((name.to_string(), p)),
                 Err(e) => errs.push(RegistryError { source_name: name.to_string(), message: e.to_string() }),
             }
         }
-        let built = Registry::new(version, parts);
+        let mut parsed = BTreeMap::new();
+        for (name, text) in symbol_docs {
+            let source_name = format!("symbols/{name}");
+            let Some(id) = symbol_id(&source_name) else {
+                errs.push(RegistryError { source_name, message: "symbol files are named <id>.svg".into() });
+                continue;
+            };
+            match crate::symbol::parse_svg(text) {
+                Ok(s) => {
+                    parsed.insert(id.to_string(), s);
+                }
+                Err(es) => errs
+                    .extend(es.into_iter().map(|message| RegistryError { source_name: source_name.clone(), message })),
+            }
+        }
+        let symbols = parsed.iter().map(|(id, s)| (id.clone(), s.def.clone())).collect();
+        let built = Registry::new(version, parts, symbols);
         match built {
-            Ok(r) if errs.is_empty() => Ok(r),
+            Ok(registry) if errs.is_empty() => {
+                let sprite_sheet = crate::symbol::sprite_sheet(parsed.iter().map(|(id, s)| (id.as_str(), s)));
+                Ok(Loaded { registry, sprite_sheet })
+            }
             Ok(_) => Err(errs),
             Err(more) => {
                 errs.extend(more);
                 Err(errs)
             }
         }
+    }
+
+    /// [`Registry::from_sources`] without the sprite sheet.
+    #[cfg(feature = "sources")]
+    pub fn from_yaml_docs<'a>(
+        version: impl Into<String>,
+        part_docs: impl IntoIterator<Item = (&'a str, &'a str)>,
+        symbol_docs: impl IntoIterator<Item = (&'a str, &'a str)>,
+    ) -> Result<Registry, Vec<RegistryError>> {
+        Registry::from_sources(version, part_docs, symbol_docs).map(|l| l.registry)
     }
 
     pub fn part(&self, id: &str) -> Option<&PartDef> {

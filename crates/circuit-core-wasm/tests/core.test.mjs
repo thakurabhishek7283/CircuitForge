@@ -17,6 +17,7 @@ const env = (s, op, body, author = "user") =>
 
 test("registry loads; bad input throws", () => {
   assert.equal(registry.version, version);
+  assert.ok(JSON.parse(bundle).symbols.opamp.pins.OUT);
   assert.throws(() => core.CoreRegistry.fromJson("{}"));
   assert.throws(() => new core.CoreSession(registry, '{"schema_version":1}'));
 });
@@ -25,6 +26,8 @@ test("apply returns ok/err outcomes and undo restores", () => {
   const s = new core.CoreSession(registry);
   const ok = JSON.parse(s.apply(env(s, "part.add", { refdes: "R1", part: "resistor_th" }))).ok;
   assert.deepEqual(ok.patch.parts_upserted, ["R1"]);
+  const data = JSON.parse(s.changes(JSON.stringify(ok.patch))).ok;
+  assert.equal(data.parts.R1.params.resistance.display, "10kΩ");
   assert.equal(s.rev, 1);
   const err = JSON.parse(s.apply(env(s, "part.add", { refdes: "R1", part: "resistor_th" }))).err;
   assert.equal(err.code, "refdes_conflict");

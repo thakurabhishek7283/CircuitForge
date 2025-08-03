@@ -10,6 +10,6 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-# The browser loads the JSON registry bundle, so the YAML loader is left out.
+# The browser loads the JSON registry bundle, so the YAML/SVG source loaders are left out.
 circuit-core = { path = "../circuit-core", default-features = false }
 wasm-bindgen = "0.2.129"

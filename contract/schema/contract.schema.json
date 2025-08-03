@@ -1445,6 +1445,61 @@
         }
       ]
     },
+    "PatchData": {
+      "type": "object",
+      "properties": {
+        "rev": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "parts": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PartInstance"
+          }
+        },
+        "nets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Net"
+          }
+        },
+        "blocks": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Block"
+          }
+        },
+        "analyses": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/Analysis"
+          },
+          "description": "Present when `patch.analyses_changed`."
+        },
+        "hints": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/LayoutHint"
+          },
+          "description": "Present when `patch.hints_changed`."
+        }
+      },
+      "required": [
+        "rev",
+        "parts",
+        "nets",
+        "blocks"
+      ],
+      "description": "The current state of everything a [`Patch`] names, so a UI mirror can update itself without\nreading the whole circuit (LLD §10). Removed ids are in the patch itself."
+    },
     "Trial": {
       "type": "object",
       "properties": {
@@ -1663,11 +1718,19 @@
           "additionalProperties": {
             "$ref": "#/$defs/PartDef"
           }
+        },
+        "symbols": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SymbolDef"
+          },
+          "description": "Schematic symbols by id (`symbols/<id>.svg`): geometry only; the drawings ship in the\nbundle's sprite sheet."
         }
       },
       "required": [
         "version",
-        "parts"
+        "parts",
+        "symbols"
       ]
     },
     "PartDef": {
@@ -1739,10 +1802,8 @@
           ]
         },
         "symbol": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": "string",
+          "description": "Schematic symbol, `symbols/<id>.svg`; its pin anchors are matched by pin name."
         },
         "breadboard": {
           "type": [
@@ -1771,7 +1832,8 @@
         "id",
         "category",
         "title",
-        "pins"
+        "pins",
+        "symbol"
       ]
     },
     "Category": {
@@ -1895,6 +1957,69 @@
       "type": "string",
       "enum": [
         "mains"
+      ]
+    },
+    "SymbolDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0,
+          "description": "Size in schematic units (multiples of [`GRID`])."
+        },
+        "height": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "pins": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Anchor"
+          },
+          "description": "Pin anchors by pin name (base name for the unit pins of a multi-unit part)."
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "pins"
+      ]
+    },
+    "Anchor": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "x": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "y": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "side": {
+          "$ref": "#/$defs/Side",
+          "description": "The edge the anchor sits on; wires leave the symbol in this direction."
+        }
+      },
+      "required": [
+        "x",
+        "y",
+        "side"
+      ]
+    },
+    "Side": {
+      "type": "string",
+      "enum": [
+        "left",
+        "right",
+        "top",
+        "bottom"
       ]
     }
   }

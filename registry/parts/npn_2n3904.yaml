@@ -10,4 +10,5 @@ limits: {v_ce_max: 40, i_c_max: 0.2, p_max: 0.625}
 spice:
   include: models/bjt.lib
   line: "{refdes} {C} {B} {E} Q2N3904"
+symbol: symbols/npn.svg
 teach: "A small base current controls a collector current about 100–300× larger."

@@ -10,4 +10,5 @@ params:
 limits: {p_max: 0.25}
 spice:
   line: "{refdes} {1} {2} {resistance}"
+symbol: symbols/resistor.svg
 teach: "Ohm's law: V = I·R. A 1/4 W part should stay well under 250 mW."

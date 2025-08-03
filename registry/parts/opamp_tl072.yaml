@@ -16,4 +16,5 @@ limits: {v_supply_max: 36, i_out_max: 0.02}
 spice:
   include: models/tl072.lib
   unit_line: "X{refdes}_{unit} {INP} {INM} {VCC} {VEE} {OUT} TL072"
+symbol: symbols/opamp.svg
 teach: "JFET inputs draw almost no current; supply up to ±18 V."

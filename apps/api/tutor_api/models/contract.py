@@ -479,6 +479,13 @@ class Hazard(StrEnum):
     mains = "mains"
 
 
+class Side(StrEnum):
+    left = "left"
+    right = "right"
+    top = "top"
+    bottom = "bottom"
+
+
 class Quantity(BaseModel):
     """
     A parsed physical value. `display` is canonical and round-trips exactly through [`parse_quantity`].
@@ -851,6 +858,20 @@ class PinDef(BaseModel):
     unit: str | None = None
 
 
+class Anchor(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    x: Annotated[int, Field(ge=0)]
+    y: Annotated[int, Field(ge=0)]
+    side: Annotated[
+        Side,
+        Field(
+            description="The edge the anchor sits on; wires leave the symbol in this direction."
+        ),
+    ]
+
+
 class PartInstance(BaseModel):
     refdes: str
     part: str
@@ -1048,6 +1069,26 @@ class Outcome(RootModel[Outcome1 | Outcome2]):
     root: Outcome1 | Outcome2
 
 
+class PatchData(BaseModel):
+    """
+    The current state of everything a [`Patch`] names, so a UI mirror can update itself without
+    reading the whole circuit (LLD §10). Removed ids are in the patch itself.
+    """
+
+    rev: Annotated[int, Field(ge=0)]
+    parts: dict[str, PartInstance]
+    nets: dict[str, Net]
+    blocks: dict[str, Block]
+    analyses: Annotated[
+        list[Analysis] | None,
+        Field(description="Present when `patch.analyses_changed`."),
+    ] = None
+    hints: Annotated[
+        list[LayoutHint] | None,
+        Field(description="Present when `patch.hints_changed`."),
+    ] = None
+
+
 class PartDef(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1083,10 +1124,31 @@ class PartDef(BaseModel):
         ),
     ] = None
     spice: SpiceDef | None = None
-    symbol: str | None = None
+    symbol: Annotated[
+        str,
+        Field(
+            description="Schematic symbol, `symbols/<id>.svg`; its pin anchors are matched by pin name."
+        ),
+    ]
     breadboard: str | None = None
     teach: str | None = None
     hazard: Hazard | None = None
+
+
+class SymbolDef(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    width: Annotated[
+        int, Field(description="Size in schematic units (multiples of [`GRID`]).", ge=0)
+    ]
+    height: Annotated[int, Field(ge=0)]
+    pins: Annotated[
+        dict[str, Anchor],
+        Field(
+            description="Pin anchors by pin name (base name for the unit pins of a multi-unit part)."
+        ),
+    ]
 
 
 class Circuit(BaseModel):
@@ -1125,3 +1187,9 @@ class Trial(BaseModel):
 class Registry(BaseModel):
     version: str
     parts: dict[str, PartDef]
+    symbols: Annotated[
+        dict[str, SymbolDef],
+        Field(
+            description="Schematic symbols by id (`symbols/<id>.svg`): geometry only; the drawings ship in the\nbundle's sprite sheet."
+        ),
+    ]

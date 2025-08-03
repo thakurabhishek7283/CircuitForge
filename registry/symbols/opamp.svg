@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 60">
+  <path d="M10 5V55L50 30Z" stroke-linejoin="round"/>
+  <path d="M0 20H10M0 40H10M50 30H60M30 0V17.5M30 60V42.5"/>
+  <path d="M13 20H19M13 40H19M16 37V43"/>
+  <circle data-pin="INM" cx="0" cy="20" r="0"/>
+  <circle data-pin="INP" cx="0" cy="40" r="0"/>
+  <circle data-pin="OUT" cx="60" cy="30" r="0"/>
+  <circle data-pin="VCC" cx="30" cy="0" r="0"/>
+  <circle data-pin="VEE" cx="30" cy="60" r="0"/>
+</svg>

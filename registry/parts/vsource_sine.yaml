@@ -12,4 +12,5 @@ params:
 dc_param: offset
 spice:
   line: "{refdes} {P} {N} DC {offset} AC {amplitude} SIN({offset} {amplitude} {frequency})"
+symbol: symbols/vsource_sine.svg
 teach: "A function generator: offset + amplitude·sin(2πft). AC analysis uses the amplitude as its magnitude."

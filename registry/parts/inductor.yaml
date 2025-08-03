@@ -10,4 +10,5 @@ params:
 limits: {i_max: 0.5}
 spice:
   line: "{refdes} {1} {2} {inductance}"
+symbol: symbols/inductor.svg
 teach: "Resists changes in current; its impedance is 2πfL."

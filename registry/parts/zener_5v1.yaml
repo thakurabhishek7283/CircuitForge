@@ -9,4 +9,5 @@ limits: {i_max: 0.178, p_max: 1}
 spice:
   include: models/diodes.lib
   line: "{refdes} {A} {K} DZ5V1"
+symbol: symbols/zener.svg
 teach: "Reverse-biased, it holds about 5.1 V across itself; a series resistor sets its current."

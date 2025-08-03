@@ -471,6 +471,7 @@ interface CircuitState {
   history: { undo: Txn[]; redo: Txn[] };
 }
 // core.apply(op) -> { patch, inverse } ; patch = { added, removed, changed } by id
+// core.changes(patch) -> PatchData: the current parts/nets/blocks the patch names
 ```
 
 Keeping the IR in WASM memory means a 300-part circuit is never serialized per op; `apply` returns only what changed.
@@ -619,7 +620,7 @@ limits: {v_supply_max: 36, i_out_max: 0.02}
 spice:
   include: models/tl072.lib
   unit_line: "X{refdes}_{unit} {INP} {INM} {VCC} {VEE} {OUT} TL072"
-symbol: symbols/opamp_dual.svg      # pin anchors matched by name
+symbol: symbols/opamp.svg           # one unit; pin anchors matched by (base) name
 breadboard: bb/dip8.svg             # v2
 teach: "JFET inputs draw almost no current; supply up to ±18 V."
 ```
@@ -683,6 +684,15 @@ LLM tokens are the only cost that grows with usage, so every layer tries to avoi
 | Tutor answers | hash(registry, template, selected role, normalized question) | Redis | 7 days |
 | Block layouts | Block content hash | Browser memory + IndexedDB | Persistent |
 | Registry bundle | Version | CDN + service worker | Immutable |
+
+**Schematic symbols (as built):**
+
+- `registry/symbols/<id>.svg`, referenced as `symbol: symbols/<id>.svg` (required on every part). The viewBox is `0 0 W H` on a 10-unit grid. Each pin anchor is an invisible marker, a direct child of the root: `<circle data-pin="OUT" cx="60" cy="30" r="0"/>`. Anchors sit on the grid and on the symbol's edge; that edge is the pin's side, which becomes the ELK port side.
+- A multi-unit part's symbol draws one unit (`opamp.svg` serves the TL072 and the LM358): unit pins anchor by their base name, as in `unit_line` (`OUT_A` → `OUT`), shared pins by their own name. The layout draws one symbol per used unit.
+- `flag_ground.svg` and `flag_power.svg` are required, each with the single anchor `P`; the layout draws them on power and ground pins instead of wires.
+- Drawings use only plain shapes and `none`/`currentColor`, so the app themes them; the sprite is inlined into the page, so scripts, styles, links, event handlers and foreign content are rejected at load.
+- The loader (`Registry::from_sources`, step 1) fails on a missing symbol, a pin without an anchor, an anchor that matches no pin, a symbol no part uses, or a missing flag; the same part↔symbol checks run when the JSON bundle loads (browser and API). The bundle JSON carries each symbol's geometry (`symbols: {id: {width, height, pins: {name: {x, y, side}}}}`); the drawings go to `registry-<version>/symbols.svg`, one `<symbol id="sym-<id>">` each. The app fetches and inlines it once, because `<use href>` cannot reference another origin (the CDN).
+- The current symbols are drawn for this project (no KiCad or Fritzing artwork), so no attribution is needed.
 
 **Token budget for one 4-block circuit (estimates):**
 

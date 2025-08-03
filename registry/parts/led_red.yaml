@@ -9,4 +9,5 @@ limits: {i_max: 0.02, v_rev_max: 5}
 spice:
   include: models/diodes.lib
   line: "{refdes} {A} {K} LED_RED"
+symbol: symbols/led.svg
 teach: "Drops about 1.8–2 V when lit; always limit its current with a series resistor."

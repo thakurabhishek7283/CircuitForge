@@ -10,4 +10,5 @@ params:
 dc_param: voltage
 spice:
   line: "{refdes} {P} {N} DC {voltage}"
+symbol: symbols/vsource_dc.svg
 teach: "An ideal supply: holds V(P) − V(N) fixed whatever current flows."

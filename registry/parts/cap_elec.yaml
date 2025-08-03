@@ -10,4 +10,5 @@ params:
 limits: {v_max: 25}
 spice:
   line: "{refdes} {P} {N} {capacitance}"
+symbol: symbols/capacitor_polarized.svg
 teach: "Polarized: the + lead (P) must sit at the higher DC voltage."

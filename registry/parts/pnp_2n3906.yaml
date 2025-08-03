@@ -10,4 +10,5 @@ limits: {v_ce_max: 40, i_c_max: 0.2, p_max: 0.625}
 spice:
   include: models/bjt.lib
   line: "{refdes} {C} {B} {E} Q2N3906"
+symbol: symbols/pnp.svg
 teach: "The mirror image of an NPN: current flows emitter to collector when the base is pulled about 0.7 V below the emitter."

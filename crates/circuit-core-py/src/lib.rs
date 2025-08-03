@@ -26,13 +26,21 @@ impl Registry {
         api::load_registry(bundle).map(|inner| Registry { inner }).map_err(PyValueError::new_err)
     }
 
-    /// Load YAML sources, one part per document: `[(source_name, yaml_text), ...]`.
-    /// The caller reads the files; circuit-core never touches the filesystem.
+    /// Load YAML part sources and SVG symbol sources: `[(file_name, text), ...]` each, symbols
+    /// named `<id>.svg`. The caller reads the files; circuit-core never touches the filesystem.
     #[staticmethod]
-    fn from_yaml_docs(version: &str, docs: Vec<(String, String)>) -> PyResult<Registry> {
-        CoreRegistry::from_yaml_docs(version, docs.iter().map(|(n, t)| (n.as_str(), t.as_str())))
-            .map(|r| Registry { inner: Arc::new(r) })
-            .map_err(|errs| PyValueError::new_err(errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n")))
+    fn from_yaml_docs(
+        version: &str,
+        docs: Vec<(String, String)>,
+        symbols: Vec<(String, String)>,
+    ) -> PyResult<Registry> {
+        CoreRegistry::from_yaml_docs(
+            version,
+            docs.iter().map(|(n, t)| (n.as_str(), t.as_str())),
+            symbols.iter().map(|(n, t)| (n.as_str(), t.as_str())),
+        )
+        .map(|r| Registry { inner: Arc::new(r) })
+        .map_err(|errs| PyValueError::new_err(errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n")))
     }
 
     #[getter]
@@ -102,6 +110,11 @@ impl Session {
     fn compile(&self, py: Python<'_>, opts: &str) -> String {
         let inner = &self.inner;
         py.detach(|| api::compile(inner, opts))
+    }
+
+    /// The current data behind a `Patch` from an `ApplyOk` → `{"ok": PatchData} | {"err": OpError}`.
+    fn changes(&self, patch: &str) -> String {
+        api::changes(&self.inner, patch)
     }
 
     /// The full `Circuit` JSON.

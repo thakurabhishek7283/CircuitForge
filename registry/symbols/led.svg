@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 30">
+  <path d="M0 20H22M38 20H60M38 12V28"/>
+  <path d="M22 12V28L38 20Z" fill="currentColor"/>
+  <path d="M30 9L36 3M36 12L42 6"/>
+  <path d="M36 3L32.5 4L35 6.5ZM42 6L38.5 7L41 9.5Z" fill="currentColor"/>
+  <circle data-pin="A" cx="0" cy="20" r="0"/>
+  <circle data-pin="K" cx="60" cy="20" r="0"/>
+</svg>

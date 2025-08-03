@@ -9,4 +9,5 @@ limits: {i_max: 0.3, v_rev_max: 100, p_max: 0.5}
 spice:
   include: models/diodes.lib
   line: "{refdes} {A} {K} D1N4148"
+symbol: symbols/diode.svg
 teach: "Conducts from anode (A) to cathode (K) once about 0.6–0.7 V is across it."

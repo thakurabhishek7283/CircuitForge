@@ -10,4 +10,5 @@ limits: {v_supply_max: 35, i_out_max: 1.5}
 spice:
   include: models/lm7805.lib
   line: "X{refdes} {IN} {GND} {OUT} LM7805"
+symbol: symbols/regulator_3pin.svg
 teach: "Needs about 2 V of headroom: feed it at least 7 V to get a steady 5 V out; the difference is burned as heat."

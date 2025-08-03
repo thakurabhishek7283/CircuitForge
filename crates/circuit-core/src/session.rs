@@ -4,13 +4,14 @@
 
 use std::sync::Arc;
 
+use indexmap::IndexMap;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::apply::{Patch, apply, apply_ops, validate};
 use crate::erc::{ErcContext, ErcIssue, erc};
 use crate::error::{ErrorCode, OpError};
-use crate::ir::Circuit;
+use crate::ir::{Analysis, Block, BlockId, Circuit, LayoutHint, Net, NetId, PartInstance, RefDes};
 use crate::ops::{Author, Op, OpEnvelope};
 use crate::registry::Registry;
 use crate::spice::{CompileError, CompileOpts, Netlist, compile};
@@ -22,6 +23,22 @@ pub struct ApplyOk {
     pub patch: Patch,
     /// Ops that undo this change, in the order they must be applied.
     pub inverse: Vec<Op>,
+}
+
+/// The current state of everything a [`Patch`] names, so a UI mirror can update itself without
+/// reading the whole circuit (LLD §10). Removed ids are in the patch itself.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, Default, PartialEq)]
+pub struct PatchData {
+    pub rev: u64,
+    pub parts: IndexMap<RefDes, PartInstance>,
+    pub nets: IndexMap<NetId, Net>,
+    pub blocks: IndexMap<BlockId, Block>,
+    /// Present when `patch.analyses_changed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub analyses: Option<Vec<Analysis>>,
+    /// Present when `patch.hints_changed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hints: Option<Vec<LayoutHint>>,
 }
 
 /// The authoritative circuit for one editor (browser) or one job (server).
@@ -59,6 +76,22 @@ impl Session {
         let patch = Patch::diff(&self.circuit, &next);
         self.circuit = next;
         Ok(ApplyOk { rev: self.circuit.rev, patch, inverse })
+    }
+
+    /// The current parts, nets and blocks a patch upserted (ids no longer present are skipped).
+    pub fn changes(&self, patch: &Patch) -> PatchData {
+        fn pick<V: Clone>(map: &IndexMap<String, V>, ids: &[String]) -> IndexMap<String, V> {
+            ids.iter().filter_map(|id| map.get(id).map(|v| (id.clone(), v.clone()))).collect()
+        }
+        let c = &self.circuit;
+        PatchData {
+            rev: c.rev,
+            parts: pick(&c.parts, &patch.parts_upserted),
+            nets: pick(&c.nets, &patch.nets_upserted),
+            blocks: pick(&c.blocks, &patch.blocks_upserted),
+            analyses: patch.analyses_changed.then(|| c.analyses.clone()),
+            hints: patch.hints_changed.then(|| c.hints.clone()),
+        }
     }
 
     /// A scratch copy sharing the registry (scrubbing, trial edits).
@@ -196,6 +229,11 @@ pub mod json_api {
         to_json(s.circuit())
     }
 
+    /// `patch_json` is a `Patch` (from an `ApplyOk`) → `Outcome<PatchData, OpError>`.
+    pub fn changes(s: &Session, patch_json: &str) -> String {
+        outcome(parse::<Patch>("patch", patch_json).map(|p| s.changes(&p)))
+    }
+
     /// For value fields in the editor: `unit` is e.g. `"ohm"` → `Outcome<Quantity, String>`.
     pub fn parse_quantity(text: &str, unit: &str) -> String {
         let r = serde_json::from_str::<Unit>(&to_json(&unit))
@@ -217,7 +255,14 @@ mod tests {
                 "id": "resistor_th", "category": "R", "title": "R",
                 "pins": [{"name": "1", "num": 1, "type": "passive"}, {"name": "2", "num": 2, "type": "passive"}],
                 "params": {"resistance": {"unit": "ohm", "default": "10k", "min": 0.1, "max": 1e9}},
-                "spice": {"line": "{refdes} {1} {2} {resistance}"}}}
+                "spice": {"line": "{refdes} {1} {2} {resistance}"},
+                "symbol": "symbols/resistor.svg"}},
+            "symbols": {
+                "resistor": {"width": 60, "height": 20, "pins": {
+                    "1": {"x": 0, "y": 10, "side": "left"}, "2": {"x": 60, "y": 10, "side": "right"}}},
+                "flag_ground": {"width": 20, "height": 20, "pins": {"P": {"x": 10, "y": 0, "side": "top"}}},
+                "flag_power": {"width": 20, "height": 20, "pins": {"P": {"x": 10, "y": 20, "side": "bottom"}}}
+            }
         }))
         .unwrap();
         load_registry(&serde_json::to_string(&r).unwrap()).unwrap()
@@ -233,6 +278,12 @@ mod tests {
         let v: serde_json::Value = serde_json::from_str(&ok).unwrap();
         assert_eq!(v["ok"]["rev"], 1);
         assert_eq!(v["ok"]["patch"]["parts_upserted"][0], "R1");
+        let data: serde_json::Value = serde_json::from_str(&changes(&s, &v["ok"]["patch"].to_string())).unwrap();
+        assert_eq!(data["ok"]["rev"], 1);
+        assert_eq!(data["ok"]["parts"]["R1"]["params"]["resistance"]["display"], "10kΩ");
+        assert!(data["ok"]["nets"].as_object().unwrap().is_empty());
+        assert!(data["ok"].get("analyses").is_none());
+        assert!(changes(&s, "{}").contains("schema_error"));
 
         let err = apply(&mut s, r#"{"v":1,"seq":2,"op":"part.add","author":"user","base_rev":0,"body":{}}"#);
         assert!(err.starts_with(r#"{"err":{"code":"schema_error""#), "{err}");

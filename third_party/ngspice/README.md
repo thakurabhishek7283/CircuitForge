@@ -8,7 +8,7 @@ One ngspice release, used for both the browser engine (WASM) and the server engi
 | `pin.env` | ngspice version, source tarball URL + sha256, official Windows build + sha256, emsdk image |
 | `fetch.sh` | Downloads a pinned artifact into `.cache/` and verifies its hash |
 | `build-native.sh` | `dist/native/bin/ngspice`: built from the tarball on Linux/macOS; on Windows, the official build of the same release (needs `py7zr` in `.venv`, local development only) |
-| `build-wasm.sh` | `dist/wasm/ngspice.{mjs,wasm}`: shared-library API as an ES module (`createNgspice()`), no pthreads. Runs in the pinned `emscripten/emsdk` image when `emcc` is not installed, so it needs only Docker |
+| `build-wasm.sh` | `dist/wasm/ngspice.{mjs,wasm}` and ngspice's `COPYING`: shared-library API as an ES module (`createNgspice()`), no pthreads. Runs in the pinned `emscripten/emsdk` image when `emcc` is not installed, so it needs only Docker |
 | `patches/` | Applied to the tarball before either build |
 
 `dist/`, `build/` and `.cache/` are not committed. CI builds both engines (cached on the pin, the

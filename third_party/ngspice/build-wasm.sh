@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ngspice of the pinned version as a WebAssembly shared library (LLD §8)
-#   -> dist/wasm/ngspice.mjs + ngspice.wasm   (ES module factory: `createNgspice()`)
+#   -> dist/wasm/ngspice.mjs + ngspice.wasm   (ES module factory: `createNgspice()`) + COPYING
 #
 # Shared-library API (ngSpice_Init / ngSpice_Circ / ngSpice_Command / ngGet_Vec_Info, plus the
 # plot/vector listings the worker needs). No pthreads (LLD §8: no SharedArrayBuffer, no
@@ -70,6 +70,8 @@ em++ -O2 "$lib" -o "$dist.tmp/ngspice.mjs" \
   -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=33554432 -sSTACK_SIZE=1048576 -sALLOW_TABLE_GROWTH=1 \
   -sEXPORTED_FUNCTIONS="$exports" -sEXPORTED_RUNTIME_METHODS="$runtime" \
   >> "$log" 2>&1 || { tail -30 "$log"; exit 1; }
+# ngspice is mostly BSD, numparam is LGPL: its licence ships next to the binary (README.md).
+cp COPYING "$dist.tmp/COPYING"
 
 rm -rf "$dist" && mv "$dist.tmp" "$dist"
 echo "$key" > "$dist/.key"

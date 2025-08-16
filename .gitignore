@@ -12,3 +12,4 @@ __pycache__/
 *.pyd
 *.so
 *.pdb
+/apps/web/dist/

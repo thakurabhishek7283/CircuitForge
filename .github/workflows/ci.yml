@@ -57,7 +57,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Rust tests
         run: cargo test --workspace --no-fail-fast
-      - name: Core builds without the YAML loader (WASM configuration)
+      - name: Core builds without the YAML/SVG source loaders (WASM configuration)
         run: cargo build -p circuit-core --no-default-features
 
       - name: Cross-runtime parity (native vs WASM vs PyO3)
@@ -83,7 +83,11 @@ jobs:
         run: |
           chmod +x third_party/ngspice/dist/native/bin/*
           .venv/bin/python -m pytest -q tools/sim
-      - name: Web worker tests
+      - name: circuit-core browser build (@tutor/core for Vite)
+        run: node crates/circuit-core-wasm/build.mjs
+      # Store, layout, schematic and sim worker against the real core, registry bundle and
+      # ngspice.wasm; then the static bundle (app + ngspice + registry) a CDN would serve.
+      - name: Web app
         working-directory: apps/web
         env:
           REQUIRE_NGSPICE: "1"
@@ -91,3 +95,9 @@ jobs:
           npm ci
           npx tsc --noEmit
           npx vitest run
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+          retention-days: 7

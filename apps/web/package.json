@@ -2,17 +2,33 @@
   "name": "@tutor/web",
   "private": true,
   "type": "module",
-  "description": "Circuit Forge browser client (LLD §10). So far: the ngspice simulation worker.",
+  "description": "Circuit Forge browser client (LLD §10): schematic editor on circuit-core (WASM), ELK layout and ngspice workers.",
   "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "comlink": "^4.4.2"
+    "comlink": "^4.4.2",
+    "d3-selection": "^3.0.0",
+    "d3-zoom": "^3.0.0",
+    "elkjs": "^0.12.0",
+    "immer": "^11.1.18",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@types/d3-selection": "^3.0.12",
+    "@types/d3-zoom": "^3.0.9",
     "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "typescript": "^7.0.2",
+    "vite": "^8.3.2",
     "vitest": "^5.0.3"
   }
 }

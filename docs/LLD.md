@@ -464,8 +464,8 @@ interface CircuitState {
   nets: Record<NetId, NetView>;
   blocks: Record<BlockId, BlockView>;     // includes status + spec badges
   ghosts: Record<BlockId, Ghost>;
-  layout: { parts: Record<RefDes, Placement>; wires: Record<NetId, Polyline[]> };
-  sim: { hash: string; status: SimStatus; result?: SimResult };
+  layout: Layout;                         // see "Layout worker" below
+  sim: { hash: string; status: SimStatus; result?: SimResult; voltages: Record<NetId, number> };
   selection: Selection | null;
   mode: "idle" | "generating" | "editing";
   history: { undo: Txn[]; redo: Txn[] };
@@ -475,6 +475,11 @@ interface CircuitState {
 ```
 
 Keeping the IR in WASM memory means a 300-part circuit is never serialized per op; `apply` returns only what changed.
+
+- Addition: `CoreSession.changes(patch)` (both bindings) returns `PatchData`, the current state of just the ids a patch upserted, plus analyses/hints when they changed. The store merges that; the only full read is loading a snapshot.
+- Undo/redo: one user action (or `applyBatch`) is one step, recorded as the inverse ops `apply()` returned. Undo applies them through the core, and the inverse *that* returns is the redo step, so history never bypasses `apply()`.
+- Ordering: parts and blocks keep the core's insertion order in the mirror; nets do not (`net.rename` keeps its slot in the core but re-inserts in a JS object), so nothing downstream depends on net order: layout sorts nets by id.
+- Simulation: a rev change schedules a run after 150 ms; the core compiles with `shunt_floating`; an unchanged netlist hash runs nothing, a result for a stale hash is dropped. Until the scope panel exists the interactive analyses are OP only (LLD §8's short transient only feeds the scope). Measured in Edge on the demo: edit to new OP result 168 ms, of which 150 ms is the debounce and 1.5 ms ngspice.
 
 **AnimationDirector**
 
@@ -489,6 +494,15 @@ Keeping the IR in WASM memory means a 300-part circuit is never serialized per o
 2. Blocks are then placed as macro-nodes left to right in signal order. Adding a block re-runs only this top level, so earlier blocks don’t jump.
 3. Power and ground are not routed as wires; each pin gets a VCC/GND flag symbol, which removes most clutter.
 4. Parts with `pinned` placements are fixed nodes; user drags never get overridden.
+
+As built (`apps/web/src/workers/layout.engine.ts`):
+
+- Level 1: the cache key is the block's ELK input graph itself (topology, orientation, footprints), so param edits never re-lay out and there are no hash collisions. Nets leaving a block end at ports on its frame (inputs west, outputs east); a block's declared signal ports always get a frame port, so connecting a downstream block does not invalidate the upstream block's cache.
+- Level 2 is deterministic rather than a second ELK run: blocks go left to right in signal order (output port → input port, ties in IR order), each aligned with the port that drives it; wires between adjacent blocks use channels in the gap, wires that skip a block go over the top. ELK `layered` re-run at this level can shift earlier blocks vertically; appending columns cannot, which the tests check.
+- Flags and the reference/value labels are part of each symbol's footprint, so ELK keeps wires and other symbols off them. Two-pin parts are turned so supply pins face up and ground/negative pins face down (shunts stand upright). A multi-unit part is drawn once per used unit; shared pins (VCC/VEE) appear, with their flags, on each unit.
+- Deviation: ELK `layered` has no absolute-position constraint for single nodes (its interactive strategies only use coordinates as ordering hints), so pinned parts are left out of ELK, placed exactly at `pinned`, and joined to the nearest point of each of their nets with a short orthogonal wire. User drags are never overridden; a pinned part may overlap a laid-out one, which is the user's choice. Pinning a multi-unit part fixes its first unit; further units stack below it.
+- ELK runs in its own nested worker (`elk-worker.min.js` via `elk-api`'s `workerFactory`) inside `layout.worker.ts`: the bundled build, loaded inside any worker, takes over `self.onmessage` instead of running in-thread, which would swallow Comlink's messages.
+- Output: `{ symbols (per drawn unit, with rot/flip and label spot), wires, junctions, flags, blocks (frames), pins, netLabels, bounds }`. Measured (Node, warm ELK): demo 69 ms uncached / 0.3 ms cached; 300 parts in 8 blocks 293 ms uncached / 4 ms cached.
 
 **Renderer**
 
@@ -671,6 +685,15 @@ def sallen_key_lp(fc_hz: float, q: float) -> dict[str, str]:
 3. The bundle (parts JSON, SVG sprite sheet, model files) is published as `registry-<version>`; projects pin a version and never change it silently.
 4. Licensing: KiCad symbols and Fritzing parts are CC-BY-SA and need attribution; vendor SPICE models each have their own redistribution terms, so record the licence per model file.
 
+**Schematic symbols (as built):**
+
+- `registry/symbols/<id>.svg`, referenced as `symbol: symbols/<id>.svg` (required on every part). The viewBox is `0 0 W H` on a 10-unit grid. Each pin anchor is an invisible marker, a direct child of the root: `<circle data-pin="OUT" cx="60" cy="30" r="0"/>`. Anchors sit on the grid and on the symbol's edge; that edge is the pin's side, which becomes the ELK port side.
+- A multi-unit part's symbol draws one unit (`opamp.svg` serves the TL072 and the LM358): unit pins anchor by their base name, as in `unit_line` (`OUT_A` → `OUT`), shared pins by their own name. The layout draws one symbol per used unit.
+- `flag_ground.svg` and `flag_power.svg` are required, each with the single anchor `P`; the layout draws them on power and ground pins instead of wires.
+- Drawings use only plain shapes and `none`/`currentColor`, so the app themes them; the sprite is inlined into the page, so scripts, styles, links, event handlers and foreign content are rejected at load.
+- The loader (`Registry::from_sources`, step 1) fails on a missing symbol, a pin without an anchor, an anchor that matches no pin, a symbol no part uses, or a missing flag; the same part↔symbol checks run when the JSON bundle loads (browser and API). The bundle JSON carries each symbol's geometry (`symbols: {id: {width, height, pins: {name: {x, y, side}}}}`); the drawings go to `registry-<version>/symbols.svg`, one `<symbol id="sym-<id>">` each. The app fetches and inlines it once, because `<use href>` cannot reference another origin (the CDN).
+- The current symbols are drawn for this project (no KiCad or Fritzing artwork), so no attribution is needed.
+
 ## 13. Caching, cost control and rate limits
 
 LLM tokens are the only cost that grows with usage, so every layer tries to avoid a model call: replay a finished circuit, reuse a template, hit a cached prefix. A typical 4-block circuit costs about 32k input and 4.5k output tokens, inside the 40k/6k budget.
@@ -684,15 +707,6 @@ LLM tokens are the only cost that grows with usage, so every layer tries to avoi
 | Tutor answers | hash(registry, template, selected role, normalized question) | Redis | 7 days |
 | Block layouts | Block content hash | Browser memory + IndexedDB | Persistent |
 | Registry bundle | Version | CDN + service worker | Immutable |
-
-**Schematic symbols (as built):**
-
-- `registry/symbols/<id>.svg`, referenced as `symbol: symbols/<id>.svg` (required on every part). The viewBox is `0 0 W H` on a 10-unit grid. Each pin anchor is an invisible marker, a direct child of the root: `<circle data-pin="OUT" cx="60" cy="30" r="0"/>`. Anchors sit on the grid and on the symbol's edge; that edge is the pin's side, which becomes the ELK port side.
-- A multi-unit part's symbol draws one unit (`opamp.svg` serves the TL072 and the LM358): unit pins anchor by their base name, as in `unit_line` (`OUT_A` → `OUT`), shared pins by their own name. The layout draws one symbol per used unit.
-- `flag_ground.svg` and `flag_power.svg` are required, each with the single anchor `P`; the layout draws them on power and ground pins instead of wires.
-- Drawings use only plain shapes and `none`/`currentColor`, so the app themes them; the sprite is inlined into the page, so scripts, styles, links, event handlers and foreign content are rejected at load.
-- The loader (`Registry::from_sources`, step 1) fails on a missing symbol, a pin without an anchor, an anchor that matches no pin, a symbol no part uses, or a missing flag; the same part↔symbol checks run when the JSON bundle loads (browser and API). The bundle JSON carries each symbol's geometry (`symbols: {id: {width, height, pins: {name: {x, y, side}}}}`); the drawings go to `registry-<version>/symbols.svg`, one `<symbol id="sym-<id>">` each. The app fetches and inlines it once, because `<use href>` cannot reference another origin (the CDN).
-- The current symbols are drawn for this project (no KiCad or Fritzing artwork), so no attribution is needed.
 
 **Token budget for one 4-block circuit (estimates):**
 

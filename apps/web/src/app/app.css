@@ -1,0 +1,375 @@
+:root {
+  --bg: #f7f7f4;
+  --panel: #ffffff;
+  --line: #e2e1dc;
+  --text: #1d1d1b;
+  --muted: #6b6a64;
+  --ink: #26262a;
+  --wire: #2f5d8a;
+  --accent: #d1520f;
+  --frame: #b9b7ae;
+  --volt-bg: #fff6d6;
+  --volt-text: #6a4b00;
+  --ok: #2e8b57;
+  --bad: #c0392b;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181b;
+    --panel: #1f2024;
+    --line: #34363c;
+    --text: #e8e6e1;
+    --muted: #9a988f;
+    --ink: #d9d7d0;
+    --wire: #7fb2e5;
+    --accent: #ff8a3d;
+    --frame: #4a4c52;
+    --volt-bg: #3a3218;
+    --volt-text: #f5d77a;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.4 var(--font);
+}
+
+.splash {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--muted);
+}
+
+.splash.error {
+  color: var(--bad);
+  padding: 16px;
+  text-align: center;
+}
+
+.app {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  min-width: 0;
+}
+
+.toolbar h1 {
+  font-size: 16px;
+  margin: 0 8px 0 0;
+  white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  gap: 6px;
+}
+
+button {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.notice {
+  color: var(--bad);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.sim-status {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.sim-status .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.sim-status .dot[data-status="ok"] {
+  background: var(--ok);
+}
+
+.sim-status.bad {
+  color: var(--bad);
+}
+
+.sim-status.bad .dot {
+  background: var(--bad);
+}
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  min-height: 0;
+}
+
+@media (max-width: 720px) {
+  main {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr auto;
+  }
+
+  .inspector {
+    border-left: none;
+    border-top: 1px solid var(--line);
+    max-height: 40vh;
+  }
+}
+
+.schematic-wrap {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+}
+
+.schematic {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.schematic:active {
+  cursor: grabbing;
+}
+
+.schematic-wrap .fit {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  background: var(--panel);
+}
+
+.symbol-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+/* Symbols inherit stroke and colour through <use>; registry drawings only say currentColor. */
+.schematic use {
+  color: var(--ink);
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  font-family: var(--font);
+}
+
+.part {
+  cursor: pointer;
+}
+
+.part .hit,
+.net .hit {
+  fill: transparent;
+  stroke: transparent;
+  pointer-events: all;
+}
+
+.net .hit {
+  fill: none;
+  stroke-width: 9;
+}
+
+.part.selected use {
+  color: var(--accent);
+  stroke-width: 2.2;
+}
+
+.part text {
+  font-size: 10px;
+  fill: var(--text);
+}
+
+.part .value {
+  fill: var(--muted);
+}
+
+.part.selected .refdes {
+  fill: var(--accent);
+  font-weight: 600;
+}
+
+.net {
+  cursor: pointer;
+}
+
+.net .wire {
+  fill: none;
+  stroke: var(--wire);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.net .junction {
+  fill: var(--wire);
+}
+
+.net.selected .wire {
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+.net.selected .junction {
+  fill: var(--accent);
+}
+
+.flag {
+  cursor: pointer;
+}
+
+.flag text {
+  font-size: 10px;
+  font-weight: 600;
+  fill: var(--muted);
+}
+
+.block rect {
+  fill: none;
+  stroke: var(--frame);
+  stroke-dasharray: 6 4;
+}
+
+.block text {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--muted);
+  cursor: pointer;
+}
+
+.block.selected rect {
+  stroke: var(--accent);
+}
+
+.volt {
+  font: 600 9px var(--mono);
+  fill: var(--volt-text);
+  paint-order: stroke;
+  stroke: var(--volt-bg);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.volt.selected {
+  fill: var(--accent);
+}
+
+.inspector {
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  padding: 16px;
+  overflow: auto;
+}
+
+.inspector h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.inspector h3 {
+  margin: 16px 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.inspector .sub,
+.inspector .hint {
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
+.inspector .big {
+  font: 600 28px var(--mono);
+  margin: 12px 0 0;
+}
+
+.inspector dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+.inspector dt {
+  color: var(--muted);
+}
+
+.inspector dd {
+  margin: 0;
+  font-family: var(--mono);
+}
+
+.inspector table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.inspector td {
+  padding: 3px 4px 3px 0;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.inspector td.num {
+  text-align: right;
+}
+
+.inspector .teach {
+  margin-top: 16px;
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--bg);
+}

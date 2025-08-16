@@ -13,7 +13,7 @@ Spec: [docs/LLD.md](docs/LLD.md).
 | `apps/web/src/gen`, `apps/api/tutor_api/models` | TS types / Pydantic models generated from the schemas (do not edit) |
 | `registry` | Parts (YAML), schematic symbols (SVG), SPICE models, bundle manifest |
 | `third_party/ngspice` | The pinned ngspice: native and WASM build scripts, patches, licence notes |
-| `apps/web/src/workers` | Simulation worker (Comlink) on ngspice WASM, with the main-thread watchdog |
+| `apps/web` | Vite + React editor: store mirroring the WASM core, ELK layout worker, SVG schematic, ngspice WASM sim worker |
 | `tools/sim` | Native ngspice driver; simulation tests for every part and the demo circuit; native vs WASM parity |
 | `tools/parity` | Cross-runtime parity gate: native vs WASM vs Python |
 | `tools/codegen` | Schema → TS / Pydantic generation |
@@ -31,6 +31,7 @@ uv pip install --python .venv py7zr                   # Windows only: unpacks th
 export PYO3_PYTHON="$PWD/.venv/Scripts/python.exe"   # Windows; .venv/bin/python elsewhere
 third_party/ngspice/build-native.sh                  # native ngspice (tests, sim_runner)
 third_party/ngspice/build-wasm.sh                    # ngspice.wasm (browser)
+node crates/circuit-core-wasm/build.mjs            # @tutor/core for the browser (Vite resolves it from pkg/)
 (cd apps/web && npm ci)
 ```
 
@@ -43,8 +44,15 @@ tools/codegen/run.sh                       # schemas -> TS + Pydantic (add --che
 node crates/circuit-core-wasm/build.mjs    # browser package in crates/circuit-core-wasm/pkg
 cargo run -p circuit-core --example bundle_registry   # registry bundle (JSON, symbols.svg, model files) in target/registry
 .venv/Scripts/python -m pytest -q tools/sim           # every part simulated + demo circuit + native vs WASM parity
-(cd apps/web && npx vitest run && npx tsc --noEmit)   # sim worker: engine, watchdog, end to end on ngspice.wasm
+(cd apps/web && npx vitest run && npx tsc --noEmit)   # store, layout, schematic, sim worker; end to end on ngspice.wasm
+(cd apps/web && npm run dev)                          # editor on the demo circuit at http://localhost:5173
+(cd apps/web && npm run build)                        # static bundle in apps/web/dist (app + ngspice + registry)
 ```
+
+The editor needs the browser build of the core, the registry bundle and `ngspice.wasm` (above). The dev
+server serves the last two from `target/registry` and `third_party/ngspice/dist/wasm`; `npm run build` copies
+them into `dist/`. For a CDN, set `VITE_REGISTRY_URL` and/or `VITE_NGSPICE_URL` at build time and that part is
+left out of `dist/`. In development the open editor is on `window.circuitForge` (no edit tools yet).
 
 The simulation tests use the bindings and registry bundle that `tools/parity/run.sh` builds. They skip
 when ngspice is not built; CI sets `REQUIRE_NGSPICE=1` so they cannot skip there.

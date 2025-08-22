@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use crate::erc::floating_nets;
 use crate::ir::*;
 use crate::registry::{Category, PartDef, Registry};
-use crate::units::spice_number;
+use crate::units::{Unit, spice_number};
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
 pub struct Netlist {
@@ -25,6 +25,21 @@ pub struct Netlist {
     pub includes: Vec<String>,
     /// Spec checks as `.meas` statements (filled once block templates define them).
     pub meas: Vec<MeasDef>,
+    /// Current into each connected pin (`"R1.1"`), as a sum of saved vectors, for the overlays
+    /// and current probes. OP and transient plots only: device currents do not exist in AC.
+    /// Pins inside subcircuit models (op-amps, regulators) are absent; a net with one such pin
+    /// gets its current by KCL.
+    pub pin_currents: BTreeMap<String, Vec<CurrentTerm>>,
+    /// The analyses in the deck, in order (resolved from `CompileOpts`).
+    pub analyses: Vec<Analysis>,
+}
+
+/// `coeff · vector`, e.g. `-1 · @r1[i]`.
+#[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
+pub struct CurrentTerm {
+    /// Canonical result vector name: `@r1[i]`, `i(v1)`, `@q1[ic]`.
+    pub vector: String,
+    pub coeff: f64,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
@@ -39,10 +54,12 @@ pub struct CompileOpts {
     /// so the simulation still runs and the tutor can explain the problem.
     #[serde(default)]
     pub shunt_floating: bool,
-    /// Override the circuit's analyses (e.g. the interactive default). `None` uses
-    /// `circuit.analyses`, or `.op` if that is empty.
+    /// Override the circuit's analyses. `None` uses `circuit.analyses`, or `.op` if that is empty.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub analyses: Option<Vec<Analysis>>,
+    /// Without `analyses`: the editor's set, [`interactive_analyses`].
+    #[serde(default)]
+    pub interactive: bool,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq, thiserror::Error)]
@@ -70,6 +87,7 @@ pub fn compile(c: &Circuit, reg: &Registry, opts: &CompileOpts) -> Result<Netlis
     let mut elements = Vec::new();
     let mut saves = vec!["all".to_string()];
     let mut nc_nodes = BTreeSet::new();
+    let mut pin_currents = BTreeMap::new();
 
     for refdes in c.sorted_refdes() {
         let inst = &c.parts[refdes];
@@ -111,6 +129,13 @@ pub fn compile(c: &Circuit, reg: &Registry, opts: &CompileOpts) -> Result<Netlis
             Category::Q => saves.extend([format!("@{r}[ic]"), format!("@{r}[ib]")]),
             _ => {}
         }
+        if let Some(line) = &sp.line {
+            for (pin, terms) in terminal_currents(def, &r, line) {
+                if pin_net.contains_key(&PinRef::new(refdes, &pin)) {
+                    pin_currents.insert(format!("{refdes}.{pin}"), terms);
+                }
+            }
+        }
     }
 
     if opts.shunt_floating {
@@ -123,6 +148,7 @@ pub fn compile(c: &Circuit, reg: &Registry, opts: &CompileOpts) -> Result<Netlis
 
     let analyses = match &opts.analyses {
         Some(a) => a.clone(),
+        None if opts.interactive => interactive_analyses(c, reg),
         None if c.analyses.is_empty() => vec![Analysis::Op],
         None => c.analyses.clone(),
     };
@@ -161,7 +187,70 @@ pub fn compile(c: &Circuit, reg: &Registry, opts: &CompileOpts) -> Result<Netlis
     text.push_str(".end\n");
 
     let hash = Sha256::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
-    Ok(Netlist { text, hash, node_map, includes, meas: Vec::new() })
+    Ok(Netlist { text, hash, node_map, includes, meas: Vec::new(), pin_currents, analyses })
+}
+
+/// Pin currents of a primitive device, from SPICE's fixed terminal order (`R n+ n-`,
+/// `D anode cathode`, `V n+ n-`, `Q c b e`): ngspice reports current *into* the first terminal.
+fn terminal_currents(def: &PartDef, r: &str, line: &str) -> Vec<(String, Vec<CurrentTerm>)> {
+    let pins: Vec<&str> = placeholders(line).filter(|n| def.pin(n).is_some()).collect();
+    let t = |vector: String, coeff: f64| CurrentTerm { vector, coeff };
+    let two = |v: String| match pins[..] {
+        [a, b, ..] => vec![(a.to_string(), vec![t(v.clone(), 1.0)]), (b.to_string(), vec![t(v, -1.0)])],
+        _ => Vec::new(),
+    };
+    match def.category {
+        Category::R | Category::C | Category::L => two(format!("@{r}[i]")),
+        Category::D => two(format!("@{r}[id]")),
+        Category::V => two(format!("i({r})")),
+        Category::Q => match pins[..] {
+            [c, b, e, ..] => {
+                let (ic, ib) = (format!("@{r}[ic]"), format!("@{r}[ib]"));
+                vec![
+                    (c.to_string(), vec![t(ic.clone(), 1.0)]),
+                    (b.to_string(), vec![t(ib.clone(), 1.0)]),
+                    (e.to_string(), vec![t(ic, -1.0), t(ib, -1.0)]),
+                ]
+            }
+            _ => Vec::new(),
+        },
+        _ => Vec::new(),
+    }
+}
+
+/// `{name}` placeholders of a template line, in order.
+fn placeholders(tpl: &str) -> impl Iterator<Item = &str> {
+    tpl.split('{').skip(1).filter_map(|s| s.split_once('}').map(|(name, _)| name))
+}
+
+/// Default short transient for the editor (LLD §8): five periods of the slowest periodic source,
+/// or 10 ms without one, in about 1,000 steps.
+pub const DEFAULT_TRAN_PERIODS: f64 = 5.0;
+pub const DEFAULT_TRAN_STOP: f64 = 10e-3;
+pub const DEFAULT_TRAN_STEPS: f64 = 1000.0;
+
+/// What the editor simulates after every edit (LLD §8): the operating point, the circuit's own
+/// transient or else a short default one, then the circuit's other analyses (AC, DC sweeps).
+/// AC and long transients therefore run only once someone asked for them with `analysis.set`.
+pub fn interactive_analyses(c: &Circuit, reg: &Registry) -> Vec<Analysis> {
+    let mut out = vec![Analysis::Op];
+    match c.analyses.iter().find(|a| matches!(a, Analysis::Tran { .. })) {
+        Some(tran) => out.push(tran.clone()),
+        None => {
+            let slowest = c
+                .parts
+                .values()
+                .filter_map(|p| reg.part(&p.part).filter(|d| d.category == Category::V).map(|_| p))
+                .flat_map(|p| p.params.values())
+                .filter(|q| q.unit == Unit::Hertz && q.si > 0.0)
+                .map(|q| q.si)
+                .reduce(f64::min);
+            let t_stop = slowest.map_or(DEFAULT_TRAN_STOP, |f| (DEFAULT_TRAN_PERIODS / f).clamp(1e-6, 1.0));
+            out.push(Analysis::Tran { t_step: t_stop / DEFAULT_TRAN_STEPS, t_stop });
+        }
+    }
+    out.extend(c.analyses.iter().filter(|a| !matches!(a, Analysis::Op | Analysis::Tran { .. })).cloned());
+    out
 }
 
 fn resolve(

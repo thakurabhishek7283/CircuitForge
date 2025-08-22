@@ -8,6 +8,7 @@ use schemars::{JsonSchema, schema_for};
 use serde_json::{Value, json};
 
 use crate::apply::{Patch, Trial};
+use crate::edit::WireEnd;
 use crate::erc::{ErcContext, ErcIssue};
 use crate::error::OpError;
 use crate::ir::Circuit;
@@ -60,6 +61,7 @@ pub fn contract_schema() -> Value {
     add::<Netlist>(&mut generator);
     add::<CompileError>(&mut generator);
     add::<Registry>(&mut generator);
+    add::<WireEnd>(&mut generator);
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "Contract",

@@ -52,3 +52,14 @@ test("parseQuantity and coreVersion", () => {
   assert.ok(JSON.parse(core.parseQuantity("4k7", "parsec")).err);
   assert.match(core.coreVersion(), /^\d+\.\d+\.\d+$/);
 });
+
+test("edit helpers: nextRefdes and connect", () => {
+  const s = new core.CoreSession(registry);
+  assert.equal(JSON.parse(s.nextRefdes("cap_film")).ok, "C1");
+  for (const refdes of ["C1", "C2"]) s.apply(env(s, "part.add", { refdes, part: "cap_film" }));
+  const ops = JSON.parse(s.connect("C1.1", JSON.stringify({ pin: "C2.2" }))).ok;
+  assert.deepEqual(ops, [{ op: "net.connect", body: { net: "N1", pins: ["C1.1", "C2.2"] } }]);
+  JSON.parse(s.applyOps(JSON.stringify(ops), "user")).ok;
+  assert.equal(JSON.parse(s.connect("C2.2", JSON.stringify({ net: "N1" }))).err.code, "pin_already_connected");
+  assert.equal(JSON.parse(s.connect("C2", "{}")).err.code, "schema_error");
+});

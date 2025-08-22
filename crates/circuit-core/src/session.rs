@@ -9,9 +9,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::apply::{Patch, apply, apply_ops, validate};
+use crate::edit::{self, WireEnd};
 use crate::erc::{ErcContext, ErcIssue, erc};
 use crate::error::{ErrorCode, OpError};
-use crate::ir::{Analysis, Block, BlockId, Circuit, LayoutHint, Net, NetId, PartInstance, RefDes};
+use crate::ir::{Analysis, Block, BlockId, Circuit, LayoutHint, Net, NetId, PartInstance, PinRef, RefDes};
 use crate::ops::{Author, Op, OpEnvelope};
 use crate::registry::Registry;
 use crate::spice::{CompileError, CompileOpts, Netlist, compile};
@@ -109,6 +110,16 @@ impl Session {
 
     pub fn circuit_text(&self) -> String {
         crate::describe::circuit_text(&self.circuit, &self.reg)
+    }
+
+    /// The refdes a new `part` gets ([`edit::next_refdes`]).
+    pub fn next_refdes(&self, part: &str) -> Result<RefDes, OpError> {
+        edit::next_refdes(&self.circuit, &self.reg, part)
+    }
+
+    /// Ops for a wire from `from` to `to` ([`edit::connect`]); apply them as one batch.
+    pub fn connect(&self, from: &PinRef, to: &WireEnd) -> Result<Vec<Op>, OpError> {
+        edit::connect(&self.circuit, &self.reg, from, to)
     }
 }
 
@@ -225,6 +236,20 @@ pub mod json_api {
         outcome(r)
     }
 
+    /// `part` is a registry id → `Outcome<RefDes, OpError>`.
+    pub fn next_refdes(s: &Session, part: &str) -> String {
+        outcome(s.next_refdes(part))
+    }
+
+    /// `from` is a `PinRef` string, `to_json` a `WireEnd` → `Outcome<[Op], OpError>`.
+    pub fn connect(s: &Session, from: &str, to_json: &str) -> String {
+        let r = from
+            .parse::<PinRef>()
+            .map_err(|e| schema_err("from", e))
+            .and_then(|from| s.connect(&from, &parse::<WireEnd>("to", to_json)?));
+        outcome(r)
+    }
+
     pub fn snapshot(s: &Session) -> String {
         to_json(s.circuit())
     }
@@ -303,6 +328,11 @@ mod tests {
         assert!(compile(&s, "{}").contains(".op"));
         assert!(parse_quantity("4k7", "ohm").contains(r#""display":"4.7kΩ""#));
         assert!(parse_quantity("4k7", "parsec").starts_with(r#"{"err""#));
+
+        assert_eq!(next_refdes(&s, "resistor_th"), r#"{"ok":"R1"}"#);
+        assert!(next_refdes(&s, "flux_capacitor").contains("part_not_in_registry"));
+        assert!(connect(&s, "R1", r#"{"pin":"R2.1"}"#).contains("schema_error"));
+        assert!(connect(&s, "R1.1", r#"{"wire":"x"}"#).contains("schema_error"));
     }
 
     #[test]

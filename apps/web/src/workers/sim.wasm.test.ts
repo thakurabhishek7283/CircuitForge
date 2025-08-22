@@ -67,6 +67,35 @@ describe.skipIf(missing.length > 0)("ngspice WASM", () => {
     expect(last!.ms).toBeLessThan(150); // LLD §1: re-simulation after an edit
   });
 
+  it("returns every pin current the compiler maps, in OP and transient, obeying KCL", async () => {
+    const { ng, compile } = await setup();
+    const n = compile({ interactive: true }) as Netlist & { pin_currents: Record<string, { vector: string; coeff: number }[]> };
+    const r = simulate(ng, { netlist: n.text, hash: n.hash, analyses: [] });
+    expect(r.status, r.log).toBe("ok");
+    expect(new Set(r.vectors.map((v) => v.analysis))).toEqual(new Set(["op", "tran", "ac"]));
+    const vec = (analysis: string, name: string) => r.vectors.find((v) => v.analysis === analysis && v.name === name)?.data;
+    const current = (analysis: string, pin: string, k: number) =>
+      n.pin_currents[pin]!.reduce((sum, t) => sum + t.coeff * vec(analysis, t.vector)![k]!, 0);
+    for (const terms of Object.values(n.pin_currents)) {
+      for (const t of terms) {
+        expect(vec("op", t.vector), `op ${t.vector}`).toBeDefined();
+        expect(vec("tran", t.vector), `tran ${t.vector}`).toBeDefined();
+      }
+    }
+    // N_A = R1.2 + R2.1 + C1.1: currents into the net's pins sum to zero at every time point.
+    const time = vec("tran", "time")!;
+    expect(time.at(-1)).toBeCloseTo(5e-3, 9); // five periods of the 1 kHz source
+    let worst = 0;
+    let peak = 0;
+    for (let k = 0; k < time.length; k++) {
+      const pins = ["R1.2", "R2.1", "C1.1"].map((p) => current("tran", p, k));
+      worst = Math.max(worst, Math.abs(pins[0]! + pins[1]! + pins[2]!));
+      peak = Math.max(peak, ...pins.map(Math.abs));
+    }
+    expect(peak).toBeGreaterThan(1e-6);
+    expect(worst).toBeLessThan(peak * 1e-3);
+  });
+
   it("reports a rejected deck as an error", async () => {
     const { ng, compile } = await setup();
     const n = compile({});

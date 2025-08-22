@@ -407,14 +407,34 @@ class CompileOpts(BaseModel):
     analyses: Annotated[
         list[Analysis] | None,
         Field(
-            description="Override the circuit's analyses (e.g. the interactive default). `None` uses\n`circuit.analyses`, or `.op` if that is empty."
+            description="Override the circuit's analyses. `None` uses `circuit.analyses`, or `.op` if that is empty."
         ),
     ] = None
+    interactive: Annotated[
+        bool | None,
+        Field(
+            description="Without `analyses`: the editor's set, [`interactive_analyses`]."
+        ),
+    ] = False
 
 
 class MeasDef(BaseModel):
     name: str
     line: str
+
+
+class CurrentTerm(BaseModel):
+    """
+    `coeff · vector`, e.g. `-1 · @r1[i]`.
+    """
+
+    vector: Annotated[
+        str,
+        Field(
+            description="Canonical result vector name: `@r1[i]`, `i(v1)`, `@q1[ic]`."
+        ),
+    ]
+    coeff: float
 
 
 class CompileError(BaseModel):
@@ -484,6 +504,56 @@ class Side(StrEnum):
     right = "right"
     top = "top"
     bottom = "bottom"
+
+
+class WireEnd1(BaseModel):
+    """
+    Where a wire ends: a pin, an existing net (a wire or a power/ground flag of it), or a supply
+    rail, which is created with its kind if it does not exist yet (the editor's GND and rail tools).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    pin: PinRef
+
+
+class WireEnd2(BaseModel):
+    """
+    Where a wire ends: a pin, an existing net (a wire or a power/ground flag of it), or a supply
+    rail, which is created with its kind if it does not exist yet (the editor's GND and rail tools).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    net: str
+
+
+class Rail(BaseModel):
+    net: str
+    kind: NetKind
+
+
+class WireEnd3(BaseModel):
+    """
+    Where a wire ends: a pin, an existing net (a wire or a power/ground flag of it), or a supply
+    rail, which is created with its kind if it does not exist yet (the editor's GND and rail tools).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    rail: Rail
+
+
+class WireEnd(RootModel[WireEnd1 | WireEnd2 | WireEnd3]):
+    root: Annotated[
+        WireEnd1 | WireEnd2 | WireEnd3,
+        Field(
+            description="Where a wire ends: a pin, an existing net (a wire or a power/ground flag of it), or a supply\nrail, which is created with its kind if it does not exist yet (the editor's GND and rail tools)."
+        ),
+    ]
 
 
 class Quantity(BaseModel):
@@ -844,6 +914,18 @@ class Netlist(BaseModel):
         list[MeasDef],
         Field(
             description="Spec checks as `.meas` statements (filled once block templates define them)."
+        ),
+    ]
+    pin_currents: Annotated[
+        dict[str, list[CurrentTerm]],
+        Field(
+            description='Current into each connected pin (`"R1.1"`), as a sum of saved vectors, for the overlays\nand current probes. OP and transient plots only: device currents do not exist in AC.\nPins inside subcircuit models (op-amps, regulators) are absent; a net with one such pin\ngets its current by KCL.'
+        ),
+    ]
+    analyses: Annotated[
+        list[Analysis],
+        Field(
+            description="The analyses in the deck, in order (resolved from `CompileOpts`)."
         ),
     ]
 

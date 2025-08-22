@@ -211,7 +211,7 @@ fn valid_block_id(id: &str) -> bool {
         && b.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'_')
 }
 
-fn net_conflict<'a>(c: &'a Circuit, id: &str, except: Option<&str>) -> Option<&'a NetId> {
+pub(crate) fn net_conflict<'a>(c: &'a Circuit, id: &str, except: Option<&str>) -> Option<&'a NetId> {
     c.nets.keys().find(|k| k.eq_ignore_ascii_case(id) && Some(k.as_str()) != except)
 }
 
@@ -524,7 +524,7 @@ fn part_pin(c: &mut Circuit, b: &PartPin, ctx: &Ctx) -> Result<Vec<Op>, OpError>
 
 // ---------------------------------------------------------------- nets
 
-fn check_pin_exists(c: &Circuit, reg: &Registry, pin: &PinRef) -> Result<(), OpError> {
+pub(crate) fn check_pin_exists(c: &Circuit, reg: &Registry, pin: &PinRef) -> Result<(), OpError> {
     let inst = c
         .parts
         .get(&pin.refdes)

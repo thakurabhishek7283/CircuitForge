@@ -80,6 +80,19 @@ impl CoreSession {
         api::changes(&self.inner, patch)
     }
 
+    /// The refdes a new instance of registry part `part` gets (lowest free number)
+    /// → `{"ok": RefDes} | {"err": OpError}`.
+    #[wasm_bindgen(js_name = nextRefdes)]
+    pub fn next_refdes(&self, part: &str) -> String {
+        api::next_refdes(&self.inner, part)
+    }
+
+    /// Ops for a wire from pin `from` (`"R1.2"`) to `to` (`WireEnd` JSON: `{"pin": "C1.1"}` or
+    /// `{"net": "GND"}`) → `{"ok": Op[]} | {"err": OpError}`. Apply them as one batch.
+    pub fn connect(&self, from: &str, to: &str) -> String {
+        api::connect(&self.inner, from, to)
+    }
+
     /// The full `Circuit` JSON.
     pub fn snapshot(&self) -> String {
         api::snapshot(&self.inner)

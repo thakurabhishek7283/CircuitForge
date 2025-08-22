@@ -90,7 +90,7 @@ fn floating_nodes_get_a_shunt_only_when_asked() {
     );
     let plain = compile(&c, &reg, &CompileOpts::default()).unwrap();
     assert!(!plain.text.contains("Rshunt"));
-    let shunted = compile(&c, &reg, &CompileOpts { shunt_floating: true, analyses: None }).unwrap();
+    let shunted = compile(&c, &reg, &CompileOpts { shunt_floating: true, ..Default::default() }).unwrap();
     assert!(shunted.text.contains("Rshunt_n_float n_float 0 1e9\n"), "{}", shunted.text);
 }
 
@@ -98,7 +98,7 @@ fn floating_nodes_get_a_shunt_only_when_asked() {
 fn partially_used_unit_gets_private_nc_nodes() {
     let reg = registry();
     let c = run(&demo_circuit(&reg), &reg, "user", &[op("net.connect", json!({"net": "N_IN", "pins": ["U1.INP_B"]}))]);
-    let n = compile(&c, &reg, &CompileOpts { shunt_floating: true, analyses: None }).unwrap();
+    let n = compile(&c, &reg, &CompileOpts { shunt_floating: true, ..Default::default() }).unwrap();
     assert!(n.text.contains("XU1_B n_in nc_u1_inm_b vcc vee nc_u1_out_b TL072\n"), "{}", n.text);
     assert!(n.text.contains("Rshunt_nc_u1_inm_b nc_u1_inm_b 0 1e9\n"));
 }
@@ -108,7 +108,7 @@ fn analyses_override_and_default() {
     let reg = registry();
     let mut c = demo_circuit(&reg);
     let opts =
-        CompileOpts { shunt_floating: false, analyses: Some(vec![Analysis::Tran { t_step: 1e-6, t_stop: 5e-3 }]) };
+        CompileOpts { analyses: Some(vec![Analysis::Tran { t_step: 1e-6, t_stop: 5e-3 }]), ..Default::default() };
     let n = compile(&c, &reg, &opts).unwrap();
     assert!(n.text.contains("\n.tran 1e-6 5e-3\n") && !n.text.contains(".ac "));
     c.analyses.clear();
@@ -156,4 +156,82 @@ fn every_part_compiles() {
         lines.push(format!("{id}: {}", body.join(" | ")));
     }
     insta::assert_snapshot!("every_part", lines.join("\n"));
+}
+
+#[test]
+fn pin_currents_follow_spice_terminal_order() {
+    let reg = registry();
+    let n = compile(&demo_circuit(&reg), &reg, &CompileOpts::default()).unwrap();
+    let terms = |pin: &str| -> Vec<(String, f64)> {
+        n.pin_currents
+            .get(pin)
+            .unwrap_or_else(|| panic!("no current for {pin}"))
+            .iter()
+            .map(|t| (t.vector.clone(), t.coeff))
+            .collect()
+    };
+    assert_eq!(terms("R1.1"), [("@r1[i]".to_string(), 1.0)]);
+    assert_eq!(terms("R1.2"), [("@r1[i]".to_string(), -1.0)]);
+    assert_eq!(terms("V3.P"), [("i(v3)".to_string(), 1.0)]);
+    assert_eq!(terms("C2.2"), [("@c2[i]".to_string(), -1.0)]);
+    assert!(!n.pin_currents.keys().any(|k| k.starts_with("U1.")), "subcircuit pins have no saved current");
+
+    let c = run(
+        &Circuit::new(reg.version.clone()),
+        &reg,
+        "user",
+        &[
+            op("part.add", json!({"refdes": "Q1", "part": "npn_2n3904"})),
+            op("part.add", json!({"refdes": "D1", "part": "led_red"})),
+            op("net.connect", json!({"net": "N_C", "pins": ["Q1.C", "D1.K"]})),
+            op("net.connect", json!({"net": "GND", "pins": ["Q1.E"]})),
+        ],
+    );
+    let n = compile(&c, &reg, &CompileOpts::default()).unwrap();
+    let get = |pin: &str| serde_json::to_value(&n.pin_currents[pin]).unwrap();
+    assert_eq!(get("Q1.C"), json!([{"vector": "@q1[ic]", "coeff": 1.0}]));
+    assert_eq!(get("Q1.E"), json!([{"vector": "@q1[ic]", "coeff": -1.0}, {"vector": "@q1[ib]", "coeff": -1.0}]));
+    assert_eq!(get("D1.K"), json!([{"vector": "@d1[id]", "coeff": -1.0}]));
+    assert!(
+        !n.pin_currents.contains_key("Q1.B") && !n.pin_currents.contains_key("D1.A"),
+        "unconnected pins are left out"
+    );
+}
+
+#[test]
+fn interactive_set_is_op_plus_short_transient_plus_requested() {
+    let reg = registry();
+    let interactive = CompileOpts { interactive: true, ..Default::default() };
+    // The demo asked for OP + AC; its 1 kHz source sizes the transient to five periods.
+    let demo = demo_circuit(&reg);
+    assert_eq!(
+        circuit_core::interactive_analyses(&demo, &reg),
+        [
+            Analysis::Op,
+            Analysis::Tran { t_step: 5e-6, t_stop: 5e-3 },
+            Analysis::Ac { points_per_decade: 20, f_start: 10.0, f_stop: 100000.0 },
+        ]
+    );
+    let n = compile(&demo, &reg, &interactive).unwrap();
+    assert!(n.text.contains("\n.op\n.tran 5e-6 5e-3\n.ac dec 20 1e1 1e5\n"), "{}", n.text);
+    assert_eq!(n.analyses, circuit_core::interactive_analyses(&demo, &reg));
+
+    // No periodic source: 10 ms. A transient the circuit asked for replaces the default.
+    let dc = run(
+        &Circuit::new(reg.version.clone()),
+        &reg,
+        "user",
+        &[op("part.add", json!({"refdes": "V1", "part": "vsource_dc"}))],
+    );
+    assert_eq!(circuit_core::interactive_analyses(&dc, &reg)[1], Analysis::Tran { t_step: 1e-5, t_stop: 1e-2 });
+    let long = json!({"analyses": [{"type": "tran", "t_step": 1e-4, "t_stop": 1.0}]});
+    let dc = run(&dc, &reg, "user", &[op("analysis.set", long)]);
+    assert_eq!(
+        circuit_core::interactive_analyses(&dc, &reg),
+        [Analysis::Op, Analysis::Tran { t_step: 1e-4, t_stop: 1.0 }]
+    );
+
+    // An explicit override still wins.
+    let opts = CompileOpts { interactive: true, analyses: Some(vec![Analysis::Op]), ..Default::default() };
+    assert!(!compile(&demo, &reg, &opts).unwrap().text.contains(".tran"));
 }

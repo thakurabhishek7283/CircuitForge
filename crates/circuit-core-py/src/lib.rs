@@ -117,6 +117,16 @@ impl Session {
         api::changes(&self.inner, patch)
     }
 
+    /// The refdes a new instance of registry part `part` gets → `{"ok": str} | {"err": OpError}`.
+    fn next_refdes(&self, part: &str) -> String {
+        api::next_refdes(&self.inner, part)
+    }
+
+    /// Ops for a wire from pin `from_pin` to `to` (`WireEnd` JSON) → `{"ok": [Op]} | {"err": OpError}`.
+    fn connect(&self, from_pin: &str, to: &str) -> String {
+        api::connect(&self.inner, from_pin, to)
+    }
+
     /// The full `Circuit` JSON.
     fn snapshot(&self) -> String {
         api::snapshot(&self.inner)

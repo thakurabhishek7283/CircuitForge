@@ -29,6 +29,23 @@
         "$ref": "#/$defs/MeasDef"
       },
       "description": "Spec checks as `.meas` statements (filled once block templates define them)."
+    },
+    "pin_currents": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/CurrentTerm"
+        }
+      },
+      "description": "Current into each connected pin (`\"R1.1\"`), as a sum of saved vectors, for the overlays\nand current probes. OP and transient plots only: device currents do not exist in AC.\nPins inside subcircuit models (op-amps, regulators) are absent; a net with one such pin\ngets its current by KCL."
+    },
+    "analyses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Analysis"
+      },
+      "description": "The analyses in the deck, in order (resolved from `CompileOpts`)."
     }
   },
   "required": [
@@ -36,7 +53,9 @@
     "hash",
     "node_map",
     "includes",
-    "meas"
+    "meas",
+    "pin_currents",
+    "analyses"
   ],
   "title": "Netlist",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -54,6 +73,121 @@
       "required": [
         "name",
         "line"
+      ]
+    },
+    "CurrentTerm": {
+      "type": "object",
+      "properties": {
+        "vector": {
+          "type": "string",
+          "description": "Canonical result vector name: `@r1[i]`, `i(v1)`, `@q1[ic]`."
+        },
+        "coeff": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "vector",
+        "coeff"
+      ],
+      "description": "`coeff · vector`, e.g. `-1 · @r1[i]`."
+    },
+    "Analysis": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "type": "string",
+              "const": "op"
+            }
+          },
+          "required": [
+            "type"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "source": {
+              "type": "string"
+            },
+            "start": {
+              "type": "number",
+              "format": "double"
+            },
+            "stop": {
+              "type": "number",
+              "format": "double"
+            },
+            "step": {
+              "type": "number",
+              "format": "double"
+            },
+            "type": {
+              "type": "string",
+              "const": "dc"
+            }
+          },
+          "required": [
+            "type",
+            "source",
+            "start",
+            "stop",
+            "step"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "points_per_decade": {
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            },
+            "f_start": {
+              "type": "number",
+              "format": "double"
+            },
+            "f_stop": {
+              "type": "number",
+              "format": "double"
+            },
+            "type": {
+              "type": "string",
+              "const": "ac"
+            }
+          },
+          "required": [
+            "type",
+            "points_per_decade",
+            "f_start",
+            "f_stop"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "t_step": {
+              "type": "number",
+              "format": "double"
+            },
+            "t_stop": {
+              "type": "number",
+              "format": "double"
+            },
+            "type": {
+              "type": "string",
+              "const": "tran"
+            }
+          },
+          "required": [
+            "type",
+            "t_step",
+            "t_stop"
+          ]
+        }
       ]
     }
   }

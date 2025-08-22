@@ -1630,7 +1630,12 @@
           "items": {
             "$ref": "#/$defs/Analysis"
           },
-          "description": "Override the circuit's analyses (e.g. the interactive default). `None` uses\n`circuit.analyses`, or `.op` if that is empty."
+          "description": "Override the circuit's analyses. `None` uses `circuit.analyses`, or `.op` if that is empty."
+        },
+        "interactive": {
+          "type": "boolean",
+          "description": "Without `analyses`: the editor's set, [`interactive_analyses`].",
+          "default": false
         }
       }
     },
@@ -1665,6 +1670,23 @@
             "$ref": "#/$defs/MeasDef"
           },
           "description": "Spec checks as `.meas` statements (filled once block templates define them)."
+        },
+        "pin_currents": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/CurrentTerm"
+            }
+          },
+          "description": "Current into each connected pin (`\"R1.1\"`), as a sum of saved vectors, for the overlays\nand current probes. OP and transient plots only: device currents do not exist in AC.\nPins inside subcircuit models (op-amps, regulators) are absent; a net with one such pin\ngets its current by KCL."
+        },
+        "analyses": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Analysis"
+          },
+          "description": "The analyses in the deck, in order (resolved from `CompileOpts`)."
         }
       },
       "required": [
@@ -1672,7 +1694,9 @@
         "hash",
         "node_map",
         "includes",
-        "meas"
+        "meas",
+        "pin_currents",
+        "analyses"
       ]
     },
     "MeasDef": {
@@ -1689,6 +1713,24 @@
         "name",
         "line"
       ]
+    },
+    "CurrentTerm": {
+      "type": "object",
+      "properties": {
+        "vector": {
+          "type": "string",
+          "description": "Canonical result vector name: `@r1[i]`, `i(v1)`, `@q1[ic]`."
+        },
+        "coeff": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "vector",
+        "coeff"
+      ],
+      "description": "`coeff · vector`, e.g. `-1 · @r1[i]`."
     },
     "CompileError": {
       "type": "object",
@@ -2021,6 +2063,59 @@
         "top",
         "bottom"
       ]
+    },
+    "WireEnd": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "pin": {
+              "$ref": "#/$defs/PinRef"
+            }
+          },
+          "required": [
+            "pin"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "net": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "net"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "rail": {
+              "type": "object",
+              "properties": {
+                "net": {
+                  "type": "string"
+                },
+                "kind": {
+                  "$ref": "#/$defs/NetKind"
+                }
+              },
+              "required": [
+                "net",
+                "kind"
+              ]
+            }
+          },
+          "required": [
+            "rail"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Where a wire ends: a pin, an existing net (a wire or a power/ground flag of it), or a supply\nrail, which is created with its kind if it does not exist yet (the editor's GND and rail tools)."
     }
   }
 }

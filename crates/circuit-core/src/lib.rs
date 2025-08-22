@@ -4,6 +4,7 @@
 
 pub mod apply;
 pub mod describe;
+pub mod edit;
 pub mod erc;
 pub mod error;
 pub mod ir;
@@ -23,4 +24,4 @@ pub use ir::Circuit;
 pub use ops::{Op, OpEnvelope, parse_envelope};
 pub use registry::Registry;
 pub use session::{ApplyOk, PatchData, Session};
-pub use spice::{CompileOpts, Netlist, compile};
+pub use spice::{CompileOpts, Netlist, compile, interactive_analyses};

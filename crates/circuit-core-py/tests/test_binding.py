@@ -87,6 +87,21 @@ def test_compile_erc_text_and_quantity(reg):
     assert cc.unwrap(cc.parse_quantity("2u2", "farad"))["si"] == pytest.approx(2.2e-6)
 
 
+
+def test_edit_helpers(reg):
+    s = cc.Session(reg)
+    assert cc.unwrap(s.next_refdes("resistor_th")) == "R1"
+    for refdes in ("R1", "R2"):
+        cc.unwrap(s.apply(env(s, "part.add", {"refdes": refdes, "part": "resistor_th"})))
+    assert cc.unwrap(s.next_refdes("resistor_th")) == "R3"
+    ops = cc.unwrap(s.connect("R1.2", json.dumps({"pin": "R2.1"})))
+    assert ops == [{"op": "net.connect", "body": {"net": "N1", "pins": ["R1.2", "R2.1"]}}]
+    cc.unwrap(s.apply_ops(json.dumps(ops), "user"))
+    assert json.loads(s.connect("R2.1", json.dumps({"net": "N1"})))["err"]["code"] == "pin_already_connected"
+    netlist = cc.unwrap(s.compile(json.dumps({"interactive": True})))
+    assert "\n.op\n.tran 1e-5 1e-2\n" in netlist["text"]
+    assert netlist["pin_currents"]["R1.2"] == [{"vector": "@r1[i]", "coeff": -1.0}]
+
 def test_heavy_calls_release_the_gil(reg):
     """A trial batch must not block other Python threads (the API's event loop)."""
     s = cc.Session(reg)

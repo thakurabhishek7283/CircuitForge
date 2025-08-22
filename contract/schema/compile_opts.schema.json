@@ -14,7 +14,12 @@
       "items": {
         "$ref": "#/$defs/Analysis"
       },
-      "description": "Override the circuit's analyses (e.g. the interactive default). `None` uses\n`circuit.analyses`, or `.op` if that is empty."
+      "description": "Override the circuit's analyses. `None` uses `circuit.analyses`, or `.op` if that is empty."
+    },
+    "interactive": {
+      "type": "boolean",
+      "description": "Without `analyses`: the editor's set, [`interactive_analyses`].",
+      "default": false
     }
   },
   "title": "CompileOpts",

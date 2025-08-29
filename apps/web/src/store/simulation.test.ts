@@ -7,7 +7,8 @@ import type { SimRequest, SimResult } from "../workers/sim.types.ts";
 import { Ngspice, loadModels, simulate, type NgspiceModule } from "../workers/sim.engine.ts";
 import { bundleJson, demoJson, loadCore, missingArtifacts, repo } from "../test/artifacts.ts";
 import { createCircuitStore } from "./circuitStore.ts";
-import { SIM_DEBOUNCE_MS, attachSimulation, opVoltages } from "./simulation.ts";
+import { SIM_DEBOUNCE_MS, attachSimulation } from "./simulation.ts";
+import { buildSimView } from "./simView.ts";
 
 const ngspiceJs = join(repo, "third_party/ngspice/dist/wasm/ngspice.mjs");
 const missing = missingArtifacts();
@@ -63,7 +64,7 @@ describe.skipIf(missing.length > 0)("simulation scheduling", () => {
     await vi.advanceTimersByTimeAsync(SIM_DEBOUNCE_MS);
     expect(runner.runs).toHaveLength(2);
     expect(runner.runs[1]!.req.netlist).toMatch(/^R1 n_in n_a 3e3$/m);
-    expect(runner.runs[1]!.req.analyses).toEqual([{ type: "op" }]);
+    expect(runner.runs[1]!.req.analyses.map((a) => a.type)).toEqual(["op", "tran", "ac"]);
   });
 
   it("discards a result that a newer edit has superseded", async () => {
@@ -110,11 +111,42 @@ describe.skipIf(missing.length > 0)("simulation scheduling", () => {
   });
 });
 
-describe("opVoltages", () => {
-  it("maps OP node voltages back to net ids and ignores other plots", () => {
+describe("buildSimView", () => {
+  const nets = {
+    N_A: { id: "N_A", kind: { kind: "signal" as const }, pins: ["R1.2", "R2.1", "U1.INP_A"] },
+    N_B: { id: "N_B", kind: { kind: "signal" as const }, pins: ["R2.2", "U1.OUT_A", "U2.IN"] },
+  };
+  const netlist = {
+    node_map: { N_A: "n_a", N_B: "n_b", GND: "0" },
+    pin_currents: {
+      "R1.2": [{ vector: "@r1[i]", coeff: -1 }],
+      "R2.1": [{ vector: "@r2[i]", coeff: 1 }],
+      "R2.2": [{ vector: "@r2[i]", coeff: -1 }],
+    },
+  };
+
+  it("keys OP and transient values by net and pin, and fills a net's one unknown pin by KCL", () => {
     const r = ok("h", 3);
-    r.vectors.push({ name: "v(n_out)", analysis: "tran", unit: "V", data: Float64Array.of(9, 9) });
-    expect(opVoltages(r, { N_OUT: "n_out", VCC: "vcc", GND: "0" })).toEqual({ N_OUT: 3, VCC: 12, GND: 0 });
+    r.vectors = [
+      { name: "v(n_a)", analysis: "op", unit: "V", data: Float64Array.of(3) },
+      { name: "@r1[i]", analysis: "op", unit: "A", data: Float64Array.of(2e-3) },
+      { name: "@r2[i]", analysis: "op", unit: "A", data: Float64Array.of(0.5e-3) },
+      { name: "time", analysis: "tran", unit: "s", data: Float64Array.of(0, 1) },
+      { name: "v(n_a)", analysis: "tran", unit: "V", data: Float64Array.of(9, 8) },
+      { name: "@r1[i]", analysis: "tran", unit: "A", data: Float64Array.of(1, 2) },
+      { name: "@r2[i]", analysis: "tran", unit: "A", data: Float64Array.of(1, 1) },
+    ];
+    const view = buildSimView(r, netlist, nets);
+    expect(view.op!.v).toEqual({ N_A: 3, GND: 0 });
+    expect(view.op!.i["R1.2"]).toBeCloseTo(-2e-3);
+    // N_A: R1.2 = -2 mA, R2.1 = +0.5 mA, so 1.5 mA flows into U1.INP_A.
+    expect(view.op!.i["U1.INP_A"]).toBeCloseTo(1.5e-3);
+    // N_B has two pins without a saved current: KCL cannot say how they share it.
+    expect(view.op!.i["U1.OUT_A"]).toBeUndefined();
+    expect([...view.tran!.x]).toEqual([0, 1]);
+    expect([...view.tran!.v.N_A!]).toEqual([9, 8]);
+    expect([...view.tran!.i["U1.INP_A"]!]).toEqual([0, 1]);
+    expect(view.ac).toBeNull();
   });
 });
 

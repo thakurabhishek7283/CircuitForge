@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PartDef, PartInstance } from "../../gen/contract.ts";
-import { formatVolts, partValue } from "./labels.ts";
+import { formatSi, formatVolts, partValue } from "./labels.ts";
 
 const q = (si: number, display: string) => ({ si, display, unit: "volt" as const });
 
@@ -24,5 +24,17 @@ describe("labels", () => {
     expect(partValue({ params: {} } as unknown as PartInstance, opamp)).toBe("TL072");
     const led = { title: "Red LED, 5 mm", params: {} } as unknown as PartDef;
     expect(partValue({ params: {} } as unknown as PartInstance, led)).toBe("");
+  });
+});
+
+describe("formatSi", () => {
+  it("picks a prefix and keeps three significant figures", () => {
+    expect(formatSi(0.0047, "A")).toBe("4.7 mA");
+    expect(formatSi(-2.5e-6, "A")).toBe("-2.5 µA");
+    expect(formatSi(1000, "Hz")).toBe("1 kHz");
+    expect(formatSi(0.0049996, "s")).toBe("5 ms");
+    expect(formatSi(12, "V")).toBe("12 V");
+    expect(formatSi(0, "V")).toBe("0 V");
+    expect(formatSi(Number.NaN, "V")).toBe("—");
   });
 });

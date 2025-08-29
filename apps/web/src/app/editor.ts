@@ -1,9 +1,12 @@
 // Everything one open circuit needs: the WASM core session, the store mirroring it, and the
 // layout and simulation workers kept in step with it.
-import init, { CoreRegistry, CoreSession } from "@tutor/core";
+import init, { CoreRegistry, CoreSession, parseQuantity } from "@tutor/core";
 import { registryAssetUrl, registryBundleUrl } from "../config.ts";
 import type { Circuit, Registry } from "../gen/contract.ts";
 import { type CircuitStore, createCircuitStore } from "../store/circuitStore.ts";
+import { type Edits, createEdits } from "../store/edits.ts";
+import { type UiStore, createUiStore } from "../store/uiStore.ts";
+import { Playback } from "../views/playback.ts";
 import { attachLayout } from "../store/layoutSync.ts";
 import { attachSimulation } from "../store/simulation.ts";
 import { LayoutClient, layoutRegistry } from "../workers/layoutClient.ts";
@@ -11,8 +14,14 @@ import { SimClient } from "../workers/simClient.ts";
 
 export interface Editor {
   store: CircuitStore;
+  ui: UiStore;
+  edits: Edits;
   registry: Registry;
   sprite: string;
+  /** The core's unit parser, for value fields: `{"ok": Quantity} | {"err": string}`. */
+  parseQuantity(text: string, unit: string): string;
+  /** Transient playback position shared by the overlays and the scope cursor. */
+  playback: Playback;
   dispose(): void;
 }
 
@@ -46,8 +55,12 @@ export async function openEditor(snapshotJson: string): Promise<Editor> {
 
   return {
     store,
+    ui: createUiStore(),
+    edits: createEdits(store, session),
     registry,
     sprite,
+    parseQuantity,
+    playback: new Playback(),
     dispose() {
       for (const stop of stops) stop();
       layout.dispose();

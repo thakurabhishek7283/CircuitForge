@@ -9,18 +9,34 @@ export type LayoutFn = (input: LayoutInput) => Promise<Layout | null>;
 export function attachLayout(store: CircuitStore, layout: LayoutFn, onError: (e: unknown) => void = console.error): () => void {
   let lastKey = "";
   let latest = 0;
+  let inFlight = false;
   const update = () => {
-    const input = toLayoutInput(store.getState());
+    const state = store.getState();
+    const input = toLayoutInput(state);
     const key = JSON.stringify(input);
-    if (key === lastKey) return;
+    if (key === lastKey) {
+      // Same topology: the current layout (or the one on its way) already shows this rev.
+      if (!inFlight && state.layoutRev !== state.rev) state.setLayout(state.layout, state.rev);
+      return;
+    }
     lastKey = key;
     const ticket = ++latest;
-    layout(input).then((l) => {
-      if (l && ticket === latest) store.getState().setLayout(l);
-    }, onError);
+    inFlight = true;
+    layout(input).then(
+      (l) => {
+        if (ticket !== latest) return;
+        inFlight = false;
+        // Any topology change since would have taken a newer ticket, so this is current.
+        if (l) store.getState().setLayout(l, store.getState().rev);
+      },
+      (e: unknown) => {
+        if (ticket === latest) inFlight = false;
+        onError(e);
+      },
+    );
   };
   const unsubscribe = store.subscribe((s, prev) => {
-    if (s.parts !== prev.parts || s.nets !== prev.nets || s.blocks !== prev.blocks) update();
+    if (s.rev !== prev.rev || s.parts !== prev.parts || s.nets !== prev.nets || s.blocks !== prev.blocks) update();
   });
   update();
   return unsubscribe;

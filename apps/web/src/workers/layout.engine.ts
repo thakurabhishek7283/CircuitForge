@@ -301,7 +301,7 @@ export class LayoutEngine {
     const sym = symbol ? this.reg.symbols[symbol] : undefined;
     if (!def || !symbol || !sym) return []; // the core only accepts registry parts; a skewed bundle draws nothing
     const used = def.units.filter((u) => def.pins.some((p) => p.unit === u && netOf.has(`${part.refdes}.${p.name}`)));
-    const units: (string | null)[] = def.units.length ? (used.length ? used : [def.units[0]!]) : [null];
+    const units: (string | null)[] = !def.units.length ? [null] : part.allUnits ? def.units : used.length ? used : [def.units[0]!];
 
     return units.map((unit, i) => {
       const pins = def.pins

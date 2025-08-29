@@ -12,6 +12,13 @@
   --volt-text: #6a4b00;
   --ok: #2e8b57;
   --bad: #c0392b;
+  --dot: #e8a200;
+  --probe-0: #e8590c;
+  --probe-1: #1c7ed6;
+  --probe-2: #2f9e44;
+  --probe-3: #ae3ec9;
+  --probe-4: #f08c00;
+  --probe-5: #0c8599;
   --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
   color-scheme: light;
@@ -30,6 +37,7 @@
     --frame: #4a4c52;
     --volt-bg: #3a3218;
     --volt-text: #f5d77a;
+    --dot: #ffd43b;
     color-scheme: dark;
   }
 }
@@ -144,21 +152,144 @@ button:disabled {
 
 main {
   display: grid;
-  grid-template-columns: 1fr 300px;
+  grid-template-columns: 200px minmax(0, 1fr) 300px;
   min-height: 0;
 }
 
-@media (max-width: 720px) {
+.center {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+@media (max-width: 900px) {
   main {
-    grid-template-columns: 1fr;
+    grid-template-columns: 160px minmax(0, 1fr);
     grid-template-rows: 1fr auto;
   }
 
   .inspector {
+    grid-column: 1 / -1;
     border-left: none;
     border-top: 1px solid var(--line);
-    max-height: 40vh;
+    max-height: 35vh;
   }
+}
+
+@media (max-width: 560px) {
+  main {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr auto;
+  }
+
+  .palette {
+    max-height: 22vh;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--panel);
+}
+
+button.danger {
+  color: var(--bad);
+}
+
+button.link {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--wire);
+  font: inherit;
+  text-decoration: underline;
+}
+
+input {
+  font: 13px var(--mono);
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px 6px;
+  min-width: 0;
+}
+
+input[aria-invalid="true"] {
+  border-color: var(--bad);
+}
+
+.tool-hint {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.erc-badge {
+  padding: 1px 8px;
+  border-radius: 10px;
+  color: var(--volt-text);
+  background: var(--volt-bg);
+  border-color: transparent;
+  margin-right: 6px;
+}
+
+/* Palette */
+.palette {
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  padding: 8px 10px 16px;
+  overflow: auto;
+}
+
+.palette h3 {
+  margin: 12px 0 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.palette ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.palette li button {
+  width: 100%;
+  text-align: left;
+  border-color: transparent;
+  background: none;
+  padding: 3px 6px;
+  font-size: 13px;
+}
+
+.palette li button:hover {
+  background: var(--bg);
+}
+
+.palette .tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.rail-form {
+  display: flex;
+  gap: 4px;
+}
+
+.rail-form input {
+  width: 0;
+  flex: 1;
 }
 
 .schematic-wrap {
@@ -167,13 +298,58 @@ main {
   min-height: 0;
 }
 
+/* The overlay canvas sits under the SVG: voltage halos behind wires, dots under symbols. */
+.schematic-wrap .overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 .schematic {
+  position: relative;
   display: block;
   width: 100%;
   height: 100%;
   cursor: grab;
   touch-action: none;
   user-select: none;
+}
+
+.tool-wire .schematic,
+.tool-rail .schematic,
+.tool-wire .part,
+.tool-rail .part {
+  cursor: crosshair;
+}
+
+.pin-targets circle {
+  stroke: var(--wire);
+  stroke-width: 1;
+  pointer-events: none;
+}
+
+.pin-targets .free {
+  fill: var(--panel);
+}
+
+.pin-targets .on {
+  fill: var(--wire);
+}
+
+.schematic .snap {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.schematic .rubber-band {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
 }
 
 .schematic:active {
@@ -372,4 +548,188 @@ main {
   padding: 10px;
   border-radius: 6px;
   background: var(--bg);
+}
+
+.inspector .field {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 8px;
+  margin-top: 8px;
+}
+
+.inspector .field label {
+  color: var(--muted);
+}
+
+.inspector .field .parsed {
+  grid-column: 2;
+  font: 11px var(--mono);
+  color: var(--muted);
+  min-height: 14px;
+}
+
+.inspector .field .parsed.bad {
+  color: var(--bad);
+  font-family: var(--font);
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.inspector td.pin-actions {
+  white-space: nowrap;
+  text-align: right;
+}
+
+.pin-actions button {
+  padding: 0 6px;
+  font-size: 11px;
+  margin-left: 2px;
+}
+
+.erc {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.erc li button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-left: 3px solid var(--muted);
+  border-radius: 0;
+  background: var(--bg);
+  margin-bottom: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.erc li[data-severity="error"] button {
+  border-left-color: var(--bad);
+}
+
+.erc li[data-severity="warning"] button {
+  border-left-color: #e8a200;
+}
+
+.erc .sev {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: var(--muted);
+  margin-right: 4px;
+}
+
+.ok-note {
+  color: var(--ok);
+}
+
+/* Scope */
+.scope {
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  display: grid;
+  grid-template-rows: auto 220px;
+  min-width: 0;
+}
+
+.scope.closed {
+  grid-template-rows: auto;
+}
+
+.scope header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 6px 10px;
+}
+
+.scope .toggle {
+  font-weight: 600;
+}
+
+.scope .tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.scope .tabs button[aria-selected="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.scope .probes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.scope .probes li {
+  font: 12px var(--mono);
+  border: 1px solid var(--probe, var(--line));
+  color: var(--probe, var(--text));
+  border-radius: 10px;
+  padding: 0 2px 0 8px;
+}
+
+.scope .probes button {
+  border: none;
+  background: none;
+  padding: 0 6px;
+  color: inherit;
+}
+
+.scope .settings {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.scope .settings .mode {
+  font-weight: 600;
+}
+
+.scope-body {
+  position: relative;
+  min-height: 0;
+  padding: 0 8px 4px;
+}
+
+.scope-body .hint {
+  color: var(--muted);
+  margin: 12px 4px;
+}
+
+.scope .chart {
+  width: 100%;
+  height: 100%;
+}
+
+.scope .u-legend {
+  font: 11px var(--mono);
+  color: var(--text);
+}
+
+.scope-cursor {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  border-left: 1px solid var(--dot);
+  pointer-events: none;
 }

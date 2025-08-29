@@ -9,6 +9,7 @@ import type {
   ApplyOk,
   Block,
   Circuit,
+  ErcIssue,
   LayoutHint,
   Net,
   Op,
@@ -21,6 +22,7 @@ import type {
 import { type CoreSessionLike, expectOk, outcome, type Outcome } from "../core/types.ts";
 import type { SimResult, SimStatus } from "../workers/sim.types.ts";
 import type { Layout } from "../workers/layout.types.ts";
+import type { SimView } from "./simView.ts";
 
 /** One undo or redo step: the ops that take the circuit to the other side of it. */
 export interface Txn {
@@ -35,6 +37,10 @@ export interface SimState {
   hash: string | null;
   status: "idle" | "pending" | "running" | SimStatus;
   result?: SimResult;
+  /** The analyses of the latest request, in deck order. */
+  analyses?: Analysis[];
+  /** The latest result by IR id (net voltages, pin currents) per analysis. */
+  view?: SimView;
   /** OP node voltages by net id. */
   voltages: Record<string, number>;
   /** Compile error or worker failure. */
@@ -53,6 +59,8 @@ export interface CircuitData {
 
 export interface CircuitState extends CircuitData {
   layout: Layout | null;
+  /** The rev whose topology `layout` shows; equal to `rev` once the drawing has caught up. */
+  layoutRev: number;
   sim: SimState;
   selection: Selection | null;
   /** While a generation job streams, user edits are refused (LLD §4: single writer). */
@@ -60,6 +68,8 @@ export interface CircuitState extends CircuitData {
   history: { undo: Txn[]; redo: Txn[] };
   /** The last op the core refused, for the UI to explain. */
   lastError: OpError | null;
+  /** Static ERC for user edits (LLD §7: warnings a learner may build through), after every change. */
+  erc: ErcIssue[];
 
   /** Apply one user op as one undo step. */
   apply(op: Op, label?: string): Outcome<ApplyOk, OpError>;
@@ -67,8 +77,10 @@ export interface CircuitState extends CircuitData {
   applyBatch(ops: Op[], label: string): Outcome<ApplyOk, OpError>;
   undo(): boolean;
   redo(): boolean;
+  /** Report an edit the core refused before anything was applied (e.g. an impossible wire). */
+  refuse(err: OpError): Outcome<ApplyOk, OpError>;
   select(selection: Selection | null): void;
-  setLayout(layout: Layout): void;
+  setLayout(layout: Layout | null, rev: number): void;
   setSim(update: (sim: SimState) => unknown): void;
 }
 
@@ -79,6 +91,7 @@ const READ_ONLY: OpError = { code: "forbidden", message: "the circuit is read-on
 export function createCircuitStore(core: CoreSessionLike): CircuitStore {
   const initial = JSON.parse(core.snapshot()) as Circuit; // the one full read: loading a snapshot
   let seq = 0;
+  const erc = () => expectOk<ErcIssue[]>(core.erc("user_edit"), "erc");
 
   return createStore<CircuitState>()(
     immer((set, get) => {
@@ -96,6 +109,7 @@ export function createCircuitStore(core: CoreSessionLike): CircuitStore {
           if (data.hints) s.hints = data.hints;
           s.rev = data.rev;
           s.lastError = null;
+          s.erc = erc();
           const sel = s.selection;
           if (
             (sel?.kind === "part" && !s.parts[sel.refdes]) ||
@@ -152,11 +166,13 @@ export function createCircuitStore(core: CoreSessionLike): CircuitStore {
         analyses: initial.analyses,
         hints: initial.hints,
         layout: null,
+        layoutRev: -1,
         sim: { hash: null, status: "idle", voltages: {} },
         selection: null,
         mode: "idle",
         history: { undo: [], redo: [] },
         lastError: null,
+        erc: erc(),
 
         apply(op, label = op.op) {
           if (get().mode === "generating") return refuse(READ_ONLY);
@@ -169,6 +185,7 @@ export function createCircuitStore(core: CoreSessionLike): CircuitStore {
           return commit(outcome<ApplyOk, OpError>(core.applyOps(JSON.stringify(ops), "user")), label);
         },
 
+        refuse,
         undo: () => step("undo"),
         redo: () => step("redo"),
 
@@ -178,9 +195,10 @@ export function createCircuitStore(core: CoreSessionLike): CircuitStore {
           });
         },
 
-        setLayout(layout) {
+        setLayout(layout, rev) {
           set((s) => {
             s.layout = layout;
+            s.layoutRev = rev;
           });
         },
 

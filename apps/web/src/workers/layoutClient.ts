@@ -33,7 +33,10 @@ export function layoutRegistry(reg: Registry): LayoutRegistry {
 export function toLayoutInput(c: Pick<Circuit, "parts" | "nets" | "blocks">): LayoutInput {
   const values = <T>(r: Record<string, T | undefined>) => Object.values(r).filter((v): v is T => v !== undefined);
   return {
-    parts: values(c.parts).map(({ refdes, part, block, pinned }) => ({ refdes, part, block, pinned })),
+    // A learner wires a placed op-amp's second unit, so every unit of a user's part is drawn.
+    parts: values(c.parts).map(({ refdes, part, block, pinned, origin }) =>
+      origin.kind === "user" ? { refdes, part, block, pinned, allUnits: true } : { refdes, part, block, pinned },
+    ),
     nets: values(c.nets)
       .map(({ id, kind, label, pins }) => ({ id, kind, label, pins }))
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)),

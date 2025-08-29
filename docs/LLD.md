@@ -402,6 +402,9 @@ interface SimResult {
 - Scheduling is latest-wins: edits are debounced 150 ms, and a result whose hash no longer matches the store is discarded. A watchdog terminates and respawns the worker if a run exceeds 2 s.
 - Interactive default is OP plus a short transient; AC and long transients run only when the scope panel asks for them.
 - Traces are downsampled with LTTB to at most 2,000 points before plotting. Current-flow dot speed is proportional to log |I|.
+- As built (interactive set): the core decides what runs (`CompileOpts.interactive`, `interactive_analyses`): OP; the circuit's own `.tran`, or else a short default one, five periods of the slowest periodic source (a hertz-valued parameter of a voltage source) or 10 ms without one, in 1,000 steps; then any AC or DC sweep the circuit holds. The scope asks for an AC sweep or a longer transient with `analysis.set`, so a request is undoable, saved with the circuit and settable by the LLM, and what runs depends on the IR alone (the same netlist hash on the server). `Netlist.analyses` reports the resolved set. Measured in Edge on the demo (OP, 5 ms transient, AC 10 Hz–100 kHz at 20 points/decade): ngspice 11–16 ms, edit to new result 170–185 ms, of which 150 ms is the debounce. A 300-part RC ladder: ngspice 47–73 ms, edit to new result 262 ms.
+- As built (currents): `Netlist.pin_currents` maps each connected pin of a primitive device to the saved vectors giving the current into it (`R1.1` → `+@r1[i]`, `R1.2` → `−@r1[i]`, `V1.P` → `+i(v1)`, `Q1.E` → `−@q1[ic] − @q1[ib]`), from SPICE's fixed terminal order. Pins inside subcircuit models (op-amps, regulators, the 555) have none; the client fills a net's one unknown pin by KCL. Device currents exist in the OP and transient plots, not in AC.
+- As built (LTTB): the traces of one plot share an x axis, so one set of indices is chosen for all of them: per bucket, the point with the largest triangle area summed over the traces, each normalised by its own range (a 1 mV glitch survives next to a 12 V trace).
 - ngspice log lines such as “timestep too small” or “singular matrix” map to status codes the tutor can explain.
 
 **Server: `sim_runner` (arq worker)**
@@ -479,7 +482,7 @@ Keeping the IR in WASM memory means a 300-part circuit is never serialized per o
 - Addition: `CoreSession.changes(patch)` (both bindings) returns `PatchData`, the current state of just the ids a patch upserted, plus analyses/hints when they changed. The store merges that; the only full read is loading a snapshot.
 - Undo/redo: one user action (or `applyBatch`) is one step, recorded as the inverse ops `apply()` returned. Undo applies them through the core, and the inverse *that* returns is the redo step, so history never bypasses `apply()`.
 - Ordering: parts and blocks keep the core's insertion order in the mirror; nets do not (`net.rename` keeps its slot in the core but re-inserts in a JS object), so nothing downstream depends on net order: layout sorts nets by id.
-- Simulation: a rev change schedules a run after 150 ms; the core compiles with `shunt_floating`; an unchanged netlist hash runs nothing, a result for a stale hash is dropped. Until the scope panel exists the interactive analyses are OP only (LLD §8's short transient only feeds the scope). Measured in Edge on the demo: edit to new OP result 168 ms, of which 150 ms is the debounce and 1.5 ms ngspice.
+- Simulation: a rev change schedules a run after 150 ms; the core compiles with `shunt_floating`; an unchanged netlist hash runs nothing, a result for a stale hash is dropped. The core picks the interactive analyses (§8, as built). Each result is decoded once into `sim.view`: net voltages and pin currents by IR id for OP, transient and AC; nothing downstream parses vector names.
 
 **AnimationDirector**
 
@@ -510,7 +513,24 @@ As built (`apps/web/src/workers/layout.engine.ts`):
 - Overlays (voltage colouring, current dots) are drawn on a separate canvas layer with `requestAnimationFrame`, so animating dots never re-renders React.
 - Pan/zoom via a single transform matrix (d3-zoom); hit-testing uses native SVG events.
 
+As built (overlays, `views/schematic/overlay.ts`):
+
+- The canvas sits under the SVG: voltage colouring is a halo behind each wire, and the SVG keeps the selection highlight and hit-testing. The colour scale spans the largest |V| on drawn (signal) nets, so a 12 V rail, drawn as a flag, does not wash out a 1 V signal.
+- Current along a wire comes from KCL (`flow.ts`): each net's drawn wires are split into edges at vertices, branch points and pins, a spanning tree is taken, and an edge carries the sum of the pin currents beyond it. Two-pin parts also carry their current through the body. Dots move at log10(|I| / 1 nA) · 8 units/s; below 1 nA nothing moves.
+- With a transient the overlays play it in a loop, one period of the slowest source per second (2–20 s per loop), and the scope draws a cursor at the same instant; otherwise they show the OP. The last good result stays up while the next one runs.
+- The renderer reads the stores with `subscribe`, never through a hook. An e2e test counts React commits through the DevTools hook while the dots move: none. Measured in Edge at 300 parts: 145 fps (the display's rate), p95 frame 7.4 ms.
+
 **Edit tools:** the wire tool snaps only to pins and emits `net.connect`; the place tool lists registry parts; value fields use the core’s unit parser so “4k7” and “4.7k” both work.
+
+As built:
+
+- Gestures become ops in the core (`circuit_core::edit`, both bindings), not in the editor. `next_refdes(part)`: the category letter and the lowest free number (delete R2, place a resistor: R2). `connect(pin, end)`: two free pins make a new net (`N1`, `N2`, …, free of case-insensitive clashes); a free pin joins the other end's net; two nets merge, the lower-ranked net's pins moving to the other with `net.disconnect` + `net.connect`, so undo restores it with its kind and label. Rank: ground, power, a block's port net, labelled, more pins, smaller id. A `rail` end (`{net, kind}`) creates ground or a supply rail on first use; a signal net wired to a new rail becomes that rail; a pin on another supply is refused rather than shorted. Wiring a pin to its own net is refused with `pin_already_connected`.
+- Every gesture is one `apply`/`applyBatch`, so one undo step (`store/edits.ts`). Place adds the part unpinned, so the layout positions and routes it. A drag moves the part's `<g>` in the DOM (snapped to the 10-unit grid) and emits `part.pin` on drop; R rotates in place (which pins); Auto-place emits `part.pin null`. The wire and rail tools snap to the nearest `layout.pins` point within 10 screen px. Delete removes a part (`part.remove`) or a whole net (`net.disconnect` of all its pins); the inspector disconnects single pins. Value fields show the core's parse as you type and emit `part.set_param` with the text as typed. ERC (`user_edit`) re-runs after every change and is listed with links to its parts and nets.
+- Deviation from the layout rule above ("drawn once per used unit"): a part the user placed (`origin: user`) draws every unit, used or not, so the second half of a dual op-amp can be wired; generated parts still draw used units only, and ERC010 explains a floating unit. Trade-off: one extra symbol per unused unit of a user's part, no extra layout pass.
+- The store's `layoutRev` is the rev whose topology the drawing shows; the schematic exposes `data-rev` and `data-layout-rev`, so tests (and later the AnimationDirector) wait for the drawing instead of sleeping.
+- While the user has not panned or zoomed, the view fits each new layout (at most 1.5×), so a circuit built from nothing stays in view; Fit resumes this.
+
+**Scope (as built, `views/scope`):** uPlot (canvas, log x axis for Bode plots, about 50 KB) instead of a hand-written plot. Probes are UI state, not IR: voltages on nets, currents into pins; the selected net is always shown as a dashed trace. Transient tab: the auto transient or the circuit's own (at most 100,000 steps from the scope). AC tab: magnitude in dB and unwrapped phase. Both edit the circuit's analyses with `analysis.set`.
 
 **Sync:** user ops are batched every 1 s to `POST /ops`. Offline, they queue in IndexedDB and replay on reconnect; a 409 `stale_rev` triggers a snapshot reload.
 
@@ -770,6 +790,7 @@ The most important test is cross-runtime parity: the same op log must produce th
 | Orchestrator | pytest with recorded LLM responses | Repair loop and fallback paths, replayed deterministically |
 | Frontend | Vitest; Playwright end-to-end | Store and AnimationDirector logic; generate → animate → edit → simulate |
 | Load | k6 or Locust | 500 open SSE streams per API pod; sim queue under burst |
+
 
 **Generation evals (\~200 prompts across roles and levels):**
 

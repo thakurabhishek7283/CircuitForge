@@ -140,6 +140,19 @@ describe.skipIf(missing.length > 0)("layout engine", () => {
     checkDrawing(l, toLayoutInput(c));
   });
 
+  it("draws every unit of an op-amp the user placed, so its free unit can be wired", async () => {
+    const c = withOps(demo(), (c) => {
+      c.parts.U2 = { refdes: "U2", part: "opamp_tl072", params: {}, origin: { kind: "user" } };
+      c.nets.N_OUT!.pins.push("U2.INP_A");
+    });
+    const l = await engine().layout(toLayoutInput(c));
+    expect(l.symbols["U2:A"]).toBeDefined();
+    expect(l.symbols["U2:B"]).toBeDefined();
+    expect(l.pins["U2.OUT_B"]).toHaveLength(1);
+    expect(l.symbols["U1:B"]).toBeUndefined(); // the generated op-amp keeps to its used unit
+    checkDrawing(l, toLayoutInput(c));
+  });
+
   it("puts a pinned part exactly where it was pinned and wires it in", async () => {
     const c = withOps(demo(), (c) => {
       c.parts.R2!.pinned = { x: 500, y: 400, rot: 90, flip: false };

@@ -13,7 +13,7 @@ Spec: [docs/LLD.md](docs/LLD.md).
 | `apps/web/src/gen`, `apps/api/tutor_api/models` | TS types / Pydantic models generated from the schemas (do not edit) |
 | `registry` | Parts (YAML), schematic symbols (SVG), SPICE models, bundle manifest |
 | `third_party/ngspice` | The pinned ngspice: native and WASM build scripts, patches, licence notes |
-| `apps/web` | Vite + React editor: store mirroring the WASM core, ELK layout worker, SVG schematic, ngspice WASM sim worker |
+| `apps/web` | Vite + React editor: store mirroring the WASM core, edit tools, ELK layout worker, SVG schematic with canvas overlays, scope, ngspice WASM sim worker |
 | `tools/sim` | Native ngspice driver; simulation tests for every part and the demo circuit; native vs WASM parity |
 | `tools/parity` | Cross-runtime parity gate: native vs WASM vs Python |
 | `tools/codegen` | Schema → TS / Pydantic generation |
@@ -52,7 +52,7 @@ cargo run -p circuit-core --example bundle_registry   # registry bundle (JSON, s
 The editor needs the browser build of the core, the registry bundle and `ngspice.wasm` (above). The dev
 server serves the last two from `target/registry` and `third_party/ngspice/dist/wasm`; `npm run build` copies
 them into `dist/`. For a CDN, set `VITE_REGISTRY_URL` and/or `VITE_NGSPICE_URL` at build time and that part is
-left out of `dist/`. In development the open editor is on `window.circuitForge` (no edit tools yet).
+left out of `dist/`. `/#new` opens an empty circuit. In development the open editor is on `window.circuitForge`.
 
 The simulation tests use the bindings and registry bundle that `tools/parity/run.sh` builds. They skip
 when ngspice is not built; CI sets `REQUIRE_NGSPICE=1` so they cannot skip there.

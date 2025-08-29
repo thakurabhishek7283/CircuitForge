@@ -28,3 +28,24 @@ export function formatVolts(v: number): string {
   if (a < 5e-4) return "0 V";
   return a < 1 ? `${sig3(v * 1e3)} mV` : `${sig3(v)} V`;
 }
+
+const PREFIXES: [number, string][] = [
+  [1e9, "G"],
+  [1e6, "M"],
+  [1e3, "k"],
+  [1, ""],
+  [1e-3, "m"],
+  [1e-6, "µ"],
+  [1e-9, "n"],
+  [1e-12, "p"],
+];
+
+/** Three significant figures with an SI prefix: `formatSi(0.0047, "A")` is "4.7 mA". */
+export function formatSi(v: number, unit: string): string {
+  if (!Number.isFinite(v)) return "—";
+  const a = Math.abs(v);
+  if (a < 1e-15) return `0 ${unit}`;
+  const [scale, prefix] = PREFIXES.find(([s]) => a >= s * 0.9995) ?? PREFIXES.at(-1)!;
+  const x = (v / scale).toPrecision(3).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  return `${x} ${prefix}${unit}`;
+}

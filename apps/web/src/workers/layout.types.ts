@@ -12,7 +12,8 @@ export interface LayoutRegistry {
 
 /** The circuit's topology. Param values are left out, so editing a value never re-lays out. */
 export interface LayoutInput {
-  parts: { refdes: string; part: string; block?: string | null; pinned?: Placement | null }[];
+  /** `allUnits`: draw every unit of a multi-unit part, used or not (parts the user placed). */
+  parts: { refdes: string; part: string; block?: string | null; pinned?: Placement | null; allUnits?: boolean }[];
   nets: { id: string; kind: NetKind; label?: string | null; pins: string[] }[];
   /** In IR order; ties in signal order follow it. */
   blocks: { id: string; title: string; ports: BlockPort[] }[];

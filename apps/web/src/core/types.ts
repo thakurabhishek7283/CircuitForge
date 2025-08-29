@@ -14,6 +14,10 @@ export interface CoreSessionLike {
   compile(opts: string): string;
   erc(ctx: string, scope?: string | null): string;
   snapshot(): string;
+  /** Lowest free refdes for a new instance of a registry part. */
+  nextRefdes(part: string): string;
+  /** Ops for a wire from a pin to a `WireEnd`; apply them as one batch. */
+  connect(from: string, to: string): string;
 }
 
 export interface CoreModule {

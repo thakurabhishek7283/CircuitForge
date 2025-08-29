@@ -1,15 +1,22 @@
 // Schematic view (LLD §10): registry symbols as <symbol> defs, instances as memoized <use>
 // elements, wires as polylines. Pan and zoom go through one transform written straight to the
 // DOM by d3-zoom, so they never re-render React. Hit-testing uses native SVG events.
+//
+// Edit tools: the wire and rail tools snap only to pins (layout.pins); a drag pins a part where it
+// is dropped. Pointer feedback (snap marker, rubber band, the dragged part) is written to the DOM
+// directly; only the resulting op re-renders. Simulation overlays live on a canvas under the SVG
+// (overlay.ts).
 import { select } from "d3-selection";
-import { type ZoomBehavior, zoom, zoomIdentity } from "d3-zoom";
+import { type D3ZoomEvent, type ZoomBehavior, type ZoomTransform, zoom, zoomIdentity } from "d3-zoom";
 import { memo, useEffect, useMemo, useRef } from "react";
 import type { PartDef, PartInstance } from "../../gen/contract.ts";
-import { useCircuit, useEditor } from "../../app/editorContext.ts";
+import { useCircuit, useEditor, useUi } from "../../app/editorContext.ts";
 import type { Selection } from "../../store/circuitStore.ts";
+import type { Tool } from "../../store/uiStore.ts";
 import { type Point, symbolTransform } from "../../workers/layout.geometry.ts";
 import type { BlockFrame, Layout, PlacedFlag, PlacedSymbol } from "../../workers/layout.types.ts";
 import { formatVolts, partName, partValue } from "./labels.ts";
+import { OverlayRenderer } from "./overlay.ts";
 
 /** The sprite sheet's <symbol> elements, inlined once (cross-origin <use href> is not allowed). */
 export function SymbolDefs({ sprite }: { sprite: string }) {
@@ -208,47 +215,234 @@ export function SchematicContent({
 
 const selectionNet = (s: Selection | null) => (s?.kind === "net" ? s.id : null);
 
+/** Pins the wire and rail tools snap to; free pins are drawn open. */
+const PinTargets = memo(function PinTargets({ pins, connected }: { pins: Layout["pins"]; connected: Set<string> }) {
+  return (
+    <g className="pin-targets">
+      {Object.entries(pins).flatMap(([ref, at]) =>
+        at.map((p, i) => <circle key={`${ref}#${i}`} data-pin={ref} className={connected.has(ref) ? "on" : "free"} cx={p.x} cy={p.y} r={2.5} />),
+      )}
+    </g>
+  );
+});
+
+/** Snap radius, in screen pixels. */
+const SNAP_PX = 10;
+/** Pointer travel before a press on a part becomes a drag, in screen pixels. */
+const DRAG_PX = 4;
+const GRID = 10;
+
+/** The pin nearest to `p` within `radius`, if any. */
+export function nearestPin(pins: Layout["pins"], p: Point, radius: number): { ref: string; at: Point } | null {
+  let best: { ref: string; at: Point } | null = null;
+  let bestD = radius * radius;
+  for (const [ref, ats] of Object.entries(pins)) {
+    for (const at of ats) {
+      const d = (at.x - p.x) ** 2 + (at.y - p.y) ** 2;
+      if (d <= bestD) {
+        bestD = d;
+        best = { ref, at };
+      }
+    }
+  }
+  return best;
+}
+
+interface Drag {
+  refdes: string;
+  /** The part's first drawn unit: its placement is the part's. */
+  sym: PlacedSymbol;
+  start: Point;
+  startScreen: Point;
+  moved: boolean;
+  dx: number;
+  dy: number;
+}
+
 export function Schematic() {
-  const { store, registry } = useEditor();
+  const { store, ui, edits, registry, playback } = useEditor();
   const layout = useCircuit((s) => s.layout);
   const parts = useCircuit((s) => s.parts);
+  const nets = useCircuit((s) => s.nets);
   const voltages = useCircuit((s) => s.sim.voltages);
   const selection = useCircuit((s) => s.selection);
-  const onSelect = store.getState().select;
+  const tool = useUi((s) => s.tool);
+  const rev = useCircuit((s) => s.rev);
+  const layoutRev = useCircuit((s) => s.layoutRev);
   const svgRef = useRef<SVGSVGElement>(null);
   const viewRef = useRef<SVGGElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const snapRef = useRef<SVGCircleElement>(null);
+  const bandRef = useRef<SVGLineElement>(null);
   const zoomRef = useRef<ZoomBehavior<SVGSVGElement, unknown> | null>(null);
-  const fitted = useRef(false);
+  const transformRef = useRef<ZoomTransform>(zoomIdentity);
+  const hotPin = useRef<{ ref: string; at: Point } | null>(null);
+  const drag = useRef<Drag | null>(null);
+  const justDragged = useRef(false);
+  /** Follow the circuit as it grows until the user pans or zooms (Fit resumes it). */
+  const autoFit = useRef(true);
+
+  const connected = useMemo(() => new Set(Object.values(nets).flatMap((n) => n?.pins ?? [])), [nets]);
 
   useEffect(() => {
     const svg = svgRef.current!;
+    const overlay = new OverlayRenderer({ canvas: canvasRef.current!, store, ui, registry, playback });
     const z = zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.2, 8])
-      .on("zoom", (e: { transform: { toString(): string } }) => viewRef.current?.setAttribute("transform", e.transform.toString()));
+      // In the select tool a press on a part starts a drag, not a pan.
+      .filter((e: Event) => {
+        if (e.type === "wheel") return true;
+        if ((e as MouseEvent).button) return false;
+        return !(ui.getState().tool.kind === "select" && (e.target as Element).closest?.(".part"));
+      })
+      .on("zoom", (e: D3ZoomEvent<SVGSVGElement, unknown>) => {
+        if (e.sourceEvent) autoFit.current = false; // a user gesture, not fit()
+        transformRef.current = e.transform;
+        viewRef.current?.setAttribute("transform", e.transform.toString());
+        overlay.setTransform(e.transform);
+      });
     select(svg).call(z).on("dblclick.zoom", null);
     zoomRef.current = z;
     return () => {
       select(svg).on(".zoom", null);
+      overlay.dispose();
     };
-  }, []);
+  }, [store, ui, registry, playback]);
 
-  // Fit the circuit into view the first time it is laid out.
+  // Keep the circuit in view while it is being built, until the user takes over the view.
   useEffect(() => {
-    if (!layout || fitted.current || !layout.bounds.width) return;
-    fitted.current = true;
+    if (!layout || !autoFit.current || !layout.bounds.width) return;
     fit(svgRef.current!, zoomRef.current!, layout);
   }, [layout]);
 
+  // A new layout has a dropped part in place: clear the drag offsets.
+  useEffect(() => {
+    for (const g of viewRef.current?.querySelectorAll(".part[transform]") ?? []) g.removeAttribute("transform");
+  }, [layout]);
+
+  // Changing tools clears their pointer feedback.
+  useEffect(() => {
+    hotPin.current = null;
+    snapRef.current?.setAttribute("visibility", "hidden");
+    if (tool.kind !== "wire" || !tool.from) bandRef.current?.setAttribute("visibility", "hidden");
+  }, [tool]);
+
+  const world = (e: { clientX: number; clientY: number }): Point => {
+    const r = svgRef.current!.getBoundingClientRect();
+    const [x, y] = transformRef.current.invert([e.clientX - r.left, e.clientY - r.top]);
+    return { x, y };
+  };
+
+  const dragged = (refdes: string) => viewRef.current!.querySelectorAll(`.part[data-refdes="${refdes}"]`);
+
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    const p = world(e);
+    const d = drag.current;
+    if (d) {
+      if (!d.moved) {
+        if (Math.hypot(e.clientX - d.startScreen.x, e.clientY - d.startScreen.y) < DRAG_PX) return;
+        // Captured only now: capturing on press would retarget a plain click to the <svg>.
+        d.moved = true;
+        e.currentTarget.setPointerCapture(e.pointerId);
+      }
+      // The part's corner snaps to the grid, wherever on the part it was grabbed.
+      d.dx = Math.round((d.sym.x + p.x - d.start.x) / GRID) * GRID - d.sym.x;
+      d.dy = Math.round((d.sym.y + p.y - d.start.y) / GRID) * GRID - d.sym.y;
+      for (const g of dragged(d.refdes)) g.setAttribute("transform", `translate(${d.dx} ${d.dy})`);
+      return;
+    }
+    const t = ui.getState().tool;
+    if (t.kind === "select" || !layout) return;
+    const hot = nearestPin(layout.pins, p, SNAP_PX / transformRef.current.k);
+    hotPin.current = hot;
+    const snap = snapRef.current!;
+    if (hot) {
+      snap.setAttribute("cx", String(hot.at.x));
+      snap.setAttribute("cy", String(hot.at.y));
+    }
+    snap.setAttribute("visibility", hot ? "visible" : "hidden");
+    const from = t.kind === "wire" && t.from ? layout.pins[t.from]?.[0] : undefined;
+    if (from) {
+      const to = hot?.at ?? p;
+      const band = bandRef.current!;
+      band.setAttribute("x1", String(from.x));
+      band.setAttribute("y1", String(from.y));
+      band.setAttribute("x2", String(to.x));
+      band.setAttribute("y2", String(to.y));
+      band.setAttribute("visibility", "visible");
+    }
+  };
+
+  const onPointerDown = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0 || ui.getState().tool.kind !== "select" || !layout) return;
+    const refdes = (e.target as Element).closest<SVGGElement>(".part")?.dataset.refdes;
+    const sym = refdes ? Object.values(layout.symbols).find((s) => s.refdes === refdes) : undefined;
+    if (!refdes || !sym) return;
+    drag.current = { refdes, sym, start: world(e), startScreen: { x: e.clientX, y: e.clientY }, moved: false, dx: 0, dy: 0 };
+  };
+
+  const onPointerUp = (e: React.PointerEvent<SVGSVGElement>) => {
+    const d = drag.current;
+    drag.current = null;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    if (!d?.moved) return;
+    justDragged.current = true; // the click that ends a drag is not a selection
+    if (d.dx === 0 && d.dy === 0) return;
+    const r = edits.pin(d.refdes, { x: d.sym.x + d.dx, y: d.sym.y + d.dy, rot: d.sym.rot, flip: d.sym.flip });
+    if (r.err) for (const g of dragged(d.refdes)) g.removeAttribute("transform");
+  };
+
+  /** A click on an item (or on the background: null), as the active tool reads it. */
+  const pick = (sel: Selection | null) => {
+    if (justDragged.current) {
+      justDragged.current = false;
+      return;
+    }
+    const t: Tool = ui.getState().tool;
+    const hot = hotPin.current?.ref;
+    if (t.kind === "select") store.getState().select(sel);
+    else if (t.kind === "rail") {
+      if (hot) edits.wire(hot, { rail: { net: t.net, kind: t.netKind } });
+    } else if (!t.from) {
+      if (hot) ui.getState().setTool({ kind: "wire", from: hot });
+    } else {
+      const end = hot && hot !== t.from ? { pin: hot } : sel?.kind === "net" ? { net: sel.id } : null;
+      if (end) edits.wire(t.from, end);
+      ui.getState().setTool({ kind: "wire", from: null });
+    }
+  };
+
   return (
-    <div className="schematic-wrap">
-      <svg ref={svgRef} className="schematic" role="img" aria-label="Circuit schematic" onClick={() => onSelect(null)}>
+    <div className={`schematic-wrap tool-${tool.kind}`} data-rev={rev} data-layout-rev={layoutRev}>
+      <canvas ref={canvasRef} className="overlay" aria-hidden="true" />
+      <svg
+        ref={svgRef}
+        className="schematic"
+        role="img"
+        aria-label="Circuit schematic"
+        onClick={() => pick(null)}
+        onPointerMove={onPointerMove}
+        onPointerDown={onPointerDown}
+        onPointerUp={onPointerUp}
+      >
         <g ref={viewRef}>
           {layout && (
-            <SchematicContent layout={layout} parts={parts} defs={registry.parts} voltages={voltages} selection={selection} onSelect={onSelect} />
+            <SchematicContent layout={layout} parts={parts} defs={registry.parts} voltages={voltages} selection={selection} onSelect={pick} />
           )}
+          {layout && tool.kind !== "select" && <PinTargets pins={layout.pins} connected={connected} />}
+          <line ref={bandRef} className="rubber-band" visibility="hidden" />
+          <circle ref={snapRef} className="snap" r={5} visibility="hidden" />
         </g>
       </svg>
-      <button type="button" className="fit" title="Fit to view" onClick={() => layout && fit(svgRef.current!, zoomRef.current!, layout)}>
+      <button
+        type="button"
+        className="fit"
+        title="Fit to view, and keep fitting as the circuit grows"
+        onClick={() => {
+          autoFit.current = true;
+          if (layout) fit(svgRef.current!, zoomRef.current!, layout);
+        }}
+      >
         Fit
       </button>
     </div>
@@ -259,7 +453,7 @@ function fit(svg: SVGSVGElement, z: ZoomBehavior<SVGSVGElement, unknown>, layout
   const { width, height } = svg.getBoundingClientRect();
   const b = layout.bounds;
   const pad = 40;
-  const k = Math.min(3, Math.max(0.2, Math.min(width / (b.width + 2 * pad), height / (b.height + 2 * pad))));
+  const k = Math.min(1.5, Math.max(0.2, Math.min(width / (b.width + 2 * pad), height / (b.height + 2 * pad))));
   const t = zoomIdentity.translate(width / 2 - k * (b.x + b.width / 2), height / 2 - k * (b.y + b.height / 2)).scale(k);
   select(svg).call(z.transform, t);
 }

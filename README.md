@@ -47,6 +47,7 @@ cargo run -p circuit-core --example bundle_registry   # registry bundle (JSON, s
 (cd apps/web && npx vitest run && npx tsc --noEmit)   # store, layout, schematic, sim worker; end to end on ngspice.wasm
 (cd apps/web && npm run dev)                          # editor on the demo circuit at http://localhost:5173
 (cd apps/web && npm run build)                        # static bundle in apps/web/dist (app + ngspice + registry)
+(cd apps/web && npm run e2e)                          # browser tests on that bundle (system Edge; PW_CHANNEL=chrome for Chrome)
 ```
 
 The editor needs the browser build of the core, the registry bundle and `ngspice.wasm` (above). The dev

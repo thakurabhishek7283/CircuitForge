@@ -96,6 +96,21 @@ jobs:
           npx tsc --noEmit
           npx vitest run
           npm run build
+      # The editing flows in a real browser, on the bundle just built. Edge is preinstalled on
+      # the Ubuntu runners, so no browser is downloaded.
+      - name: Browser tests (Playwright on the runner's Edge)
+        working-directory: apps/web
+        run: |
+          microsoft-edge --version
+          npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report
+            apps/web/test-results
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         with:
           name: web-dist

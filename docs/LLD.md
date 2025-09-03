@@ -791,6 +791,7 @@ The most important test is cross-runtime parity: the same op log must produce th
 | Frontend | Vitest; Playwright end-to-end | Store and AnimationDirector logic; generate → animate → edit → simulate |
 | Load | k6 or Locust | 500 open SSE streams per API pod; sim queue under burst |
 
+As built (frontend end-to-end): the Playwright test runner (`apps/web/e2e`, `npm run e2e`) drives the editing, scope and overlay flows against `vite preview` of the production `dist/`, the bundle a CDN serves. It uses the system browser by channel (Edge locally and on GitHub's Ubuntu runners, where it is preinstalled), so CI downloads no browser and installs no system packages. The 8 flows take about 10 s locally and 12 s with the CI settings (2 workers, traces kept for failures); 24 of 24 passed over three repeats. Tracing every test with a browser per core (8 here) starved the pages, so traces are kept in CI only.
 
 **Generation evals (\~200 prompts across roles and levels):**
 

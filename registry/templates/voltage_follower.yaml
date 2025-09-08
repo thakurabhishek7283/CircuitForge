@@ -1,0 +1,22 @@
+id: voltage_follower
+version: 1
+role: buffer
+title: Voltage follower (op-amp buffer)
+teach: "Output tied to the − input: the output copies the input (gain 1) but can drive loads the input source could not."
+ports: {in: input, out: output, vcc: power_pos, vee: power_neg}
+rails:
+  vcc: {net: VCC, volts: 12, min: 9, max: 15}
+  vee: {net: VEE, volts: -12, min: -15, max: -9}
+parts:
+  U1: {part: opamp_tl072}
+nets:
+  in: [U1.INP_A]
+  out: [U1.OUT_A, U1.INM_A]
+  vcc: [U1.VCC]
+  vee: [U1.VEE]
+solver: voltage_follower
+checks:
+  - {name: gain, label: Gain at 1 kHz, symbol: "gain", kind: ac_gain, in: in, out: out, tol_pct: 2}
+verify:
+  drive: {in: {amplitude: 1, frequency: 1k}}
+  load: {out: 1k}

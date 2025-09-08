@@ -1,0 +1,28 @@
+id: noninverting_amp
+version: 1
+role: amplifier
+title: Non-inverting amplifier
+teach: "R2 and R1 feed back a fraction of the output; the op-amp makes that fraction equal the input: gain = 1 + R2/R1, in phase."
+targets:
+  gain: {label: Gain (V/V), unit: unitless, min: 1.5, max: 100, default: "11", scale: log}
+ports: {in: input, out: output, vcc: power_pos, vee: power_neg, gnd: ground}
+rails:
+  vcc: {net: VCC, volts: 12, min: 9, max: 15}
+  vee: {net: VEE, volts: -12, min: -15, max: -9}
+parts:
+  R1: {part: resistor_th}
+  R2: {part: resistor_th}
+  U1: {part: opamp_tl072}
+nets:
+  in: [U1.INP_A]
+  n_m: [R1.1, R2.1, U1.INM_A]
+  out: [R2.2, U1.OUT_A]
+  gnd: [R1.2]
+  vcc: [U1.VCC]
+  vee: [U1.VEE]
+solver: noninverting_amp
+checks:
+  - {name: gain, label: Gain at 1 kHz, symbol: "gain", kind: ac_gain, in: in, out: out, tol_pct: 5}
+verify:
+  drive: {in: {amplitude: 0.05, frequency: 1k}}
+  load: {out: 10k}

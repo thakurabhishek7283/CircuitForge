@@ -1169,6 +1169,21 @@
           "type": "string",
           "const": "forbidden",
           "description": "The author is not allowed to emit this op (e.g. `part.pin` is user-only)."
+        },
+        {
+          "type": "string",
+          "const": "template_not_found",
+          "description": "No block template with this id in the registry."
+        },
+        {
+          "type": "string",
+          "const": "target_out_of_range",
+          "description": "A template target or rail voltage is malformed or outside the template's range."
+        },
+        {
+          "type": "string",
+          "const": "port_invalid",
+          "description": "A port binding names a net that cannot carry that port (wrong kind, missing, ground misuse)."
         }
       ],
       "description": "Error codes returned by `apply()`. These go back to the LLM verbatim during repair and are\nshown to users as friendly text (LLD §4). Additive only within a protocol major version."

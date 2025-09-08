@@ -28,7 +28,14 @@
       "items": {
         "$ref": "#/$defs/MeasDef"
       },
-      "description": "Spec checks as `.meas` statements (filled once block templates define them)."
+      "description": "Spec checks as primitive `.meas` statements, in replay order (later cards may use earlier\nresults)."
+    },
+    "checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SpecCheckDef"
+      },
+      "description": "The spec checks of every template block, and which `meas` results each combines\n([`crate::template::evaluate_checks`])."
     },
     "pin_currents": {
       "type": "object",
@@ -54,6 +61,7 @@
     "node_map",
     "includes",
     "meas",
+    "checks",
     "pin_currents",
     "analyses"
   ],
@@ -73,6 +81,132 @@
       "required": [
         "name",
         "line"
+      ]
+    },
+    "SpecCheckDef": {
+      "type": "object",
+      "properties": {
+        "block": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/CheckKind"
+        },
+        "unit": {
+          "$ref": "#/$defs/Unit"
+        },
+        "target": {
+          "type": "number",
+          "format": "double"
+        },
+        "tol_pct": {
+          "type": "number",
+          "format": "double"
+        },
+        "meas": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "`.meas` result names, in the order the kind combines them. Empty when `missing` is set."
+        },
+        "missing": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Why the check could not be compiled into this netlist (\"needs an AC analysis\")."
+        }
+      },
+      "required": [
+        "block",
+        "name",
+        "label",
+        "symbol",
+        "kind",
+        "unit",
+        "target",
+        "tol_pct",
+        "meas"
+      ],
+      "description": "A check as compiled into one netlist: which `.meas` results it combines."
+    },
+    "CheckKind": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "ac_corner",
+          "description": "−3 dB frequency below the pass-band gain (AC)."
+        },
+        {
+          "type": "string",
+          "const": "ac_q",
+          "description": "Q of a 2nd-order low/high-pass: |H(f0)| / pass-band gain, f0 at the ∓90° phase point (AC).\nAssumes the input port is driven with flat phase (a source or a buffer)."
+        },
+        {
+          "type": "string",
+          "const": "ac_gain",
+          "description": "|V(out)| / |V(in)| at `at_hz` (AC)."
+        },
+        {
+          "type": "string",
+          "const": "ac_center",
+          "description": "Band-pass centre, √(f_lo·f_hi) of the −3 dB points around the peak (AC)."
+        },
+        {
+          "type": "string",
+          "const": "ac_band_q",
+          "description": "Band-pass Q, centre / (f_hi − f_lo) (AC)."
+        },
+        {
+          "type": "string",
+          "const": "tran_freq",
+          "description": "Frequency of a periodic output: two periods between rising crossings of mid-level, in the\nsecond half of the transient (tran)."
+        },
+        {
+          "type": "string",
+          "const": "tran_duty",
+          "description": "Share of a period the output is high, from its average over two periods (tran)."
+        },
+        {
+          "type": "string",
+          "const": "tran_amplitude",
+          "description": "Half the peak-to-peak output (tran)."
+        },
+        {
+          "type": "string",
+          "const": "dc_level",
+          "description": "Average output over the transient: the DC level (ngspice `.meas` has no OP mode)."
+        },
+        {
+          "type": "string",
+          "const": "tran_threshold",
+          "description": "Input level at the 2nd rising/falling output edge: a comparator threshold (tran)."
+        }
+      ],
+      "description": "LLD §7 spec checks. Each is a few primitive ngspice `.meas` results combined by\n[`evaluate_checks`] (ngspice cannot measure an expression such as `vdb(out)-vdb(in)`)."
+    },
+    "Unit": {
+      "type": "string",
+      "enum": [
+        "ohm",
+        "farad",
+        "henry",
+        "volt",
+        "ampere",
+        "hertz",
+        "second",
+        "watt",
+        "unitless"
       ]
     },
     "CurrentTerm": {

@@ -1,0 +1,19 @@
+id: sine_source
+version: 1
+role: source
+title: Sine signal source
+teach: "A function generator: a sine wave of the amplitude and frequency you set, for driving and testing other blocks."
+targets:
+  amplitude_v: {label: Amplitude (peak), unit: volt, min: 10m, max: 10, default: "1", scale: log}
+  freq_hz: {label: Frequency, unit: hertz, min: 1, max: 100k, default: 1k, scale: log}
+ports: {out: output, gnd: ground}
+parts:
+  V1: {part: vsource_sine}
+nets:
+  out: [V1.P]
+  gnd: [V1.N]
+solver: sine_source
+checks:
+  - {name: amplitude_v, label: Amplitude, symbol: "Vpk", kind: tran_amplitude, out: out, tol_pct: 2}
+verify:
+  load: {out: 10k}

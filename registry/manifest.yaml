@@ -1,2 +1,2 @@
 # Registry bundle version. Projects pin a version and never change it silently (LLD §12).
-version: "2025.06.0"
+version: "2025.09.0"

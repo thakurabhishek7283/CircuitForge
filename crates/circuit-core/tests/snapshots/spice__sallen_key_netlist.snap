@@ -16,4 +16,9 @@ V3 n_in 0 DC 0e0 AC 1e0 SIN(0e0 1e0 1e3)
 .save all @c1[i] @c2[i] @r1[i] @r2[i]
 .op
 .ac dec 20 1e1 1e5
+.meas ac b3_fc_hz_ref find vdb(n_out) at=1e2
+.meas ac b3_fc_hz_x when vdb(n_out)=b3_fc_hz_ref-3 fall=1
+.meas ac b3_q_f0 when vp(n_out)=-1.5707963267948966e0 fall=1
+.meas ac b3_q_ref find vdb(n_out) at=b3_q_f0/10
+.meas ac b3_q_g0 find vdb(n_out) at=b3_q_f0
 .end

@@ -260,9 +260,94 @@ pub fn format_eng(si: f64, unit: Unit) -> String {
     format!("{sign}{number}{prefix}{sym}")
 }
 
+/// A value rounded to 3 significant digits for reading (spec checks): engineering notation with
+/// the unit's symbol, or a plain number for unitless values (`0.707`, not `707m`).
+pub fn format_sig(x: f64, unit: Unit) -> String {
+    if x == 0.0 || !x.is_finite() {
+        return format_eng(x, unit);
+    }
+    let r: f64 = format!("{x:.2e}").parse().expect("{:.2e} re-parses");
+    if unit != Unit::Unitless {
+        return format_eng(r, unit);
+    }
+    let mag = r.abs().log10().floor() as i32;
+    if !(-3..6).contains(&mag) {
+        return format!("{r:.2e}");
+    }
+    format!("{r:.*}", (2 - mag).max(0) as usize)
+}
+
+/// Preferred-number series (IEC 60063): the values parts are actually sold in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ESeries {
+    E6,
+    E12,
+    E24,
+}
+
+const E24: [&str; 24] = [
+    "1.0", "1.1", "1.2", "1.3", "1.5", "1.6", "1.8", "2.0", "2.2", "2.4", "2.7", "3.0", "3.3", "3.6", "3.9", "4.3",
+    "4.7", "5.1", "5.6", "6.2", "6.8", "7.5", "8.2", "9.1",
+];
+
+impl ESeries {
+    fn mantissas(self) -> impl Iterator<Item = &'static str> {
+        let step = match self {
+            ESeries::E6 => 4,
+            ESeries::E12 => 2,
+            ESeries::E24 => 1,
+        };
+        E24.iter().step_by(step).copied()
+    }
+
+    /// Every value of the series in `[lo, hi]`, ascending. Built from decimal text, so `4.7k` is
+    /// exactly the double nearest 4700 on every runtime.
+    pub fn values(self, lo: f64, hi: f64) -> Vec<f64> {
+        let mut out = Vec::new();
+        let (first, last) = (lo.log10().floor() as i32 - 1, hi.log10().ceil() as i32);
+        for exp in first..=last {
+            for m in self.mantissas() {
+                let v: f64 = format!("{m}e{exp}").parse().expect("series values parse");
+                if v >= lo * (1.0 - 1e-12) && v <= hi * (1.0 + 1e-12) {
+                    out.push(v);
+                }
+            }
+        }
+        out
+    }
+
+    /// The series value nearest to `x` in log terms (the smallest relative error).
+    pub fn nearest(self, x: f64) -> f64 {
+        self.values(x / 1.5, x * 1.5)
+            .into_iter()
+            .min_by(|a, b| (a / x).ln().abs().total_cmp(&(b / x).ln().abs()))
+            .expect("a series value lies within ±50% of any positive x")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn e_series() {
+        assert_eq!(ESeries::E12.values(1e3, 2.7e3), [1e3, 1.2e3, 1.5e3, 1.8e3, 2.2e3, 2.7e3]);
+        assert_eq!(ESeries::E6.values(1e-9, 3.3e-9).len(), 4);
+        assert_eq!(ESeries::E24.nearest(1591.5), 1.6e3);
+        assert_eq!(ESeries::E12.nearest(5.3e-9), 5.6e-9);
+        assert_eq!(ESeries::E24.nearest(4.7e3), 4.7e3);
+        assert_eq!(format_eng(ESeries::E24.nearest(4.7e3), Unit::Ohm), "4.7kΩ");
+    }
+
+    #[test]
+    fn three_significant_digits() {
+        assert_eq!(format_sig(1003.47, Unit::Hertz), "1kHz");
+        assert_eq!(format_sig(1591.55, Unit::Hertz), "1.59kHz");
+        assert_eq!(format_sig(0.70712, Unit::Unitless), "0.707");
+        assert_eq!(format_sig(12.345, Unit::Unitless), "12.3");
+        assert_eq!(format_sig(100.2, Unit::Unitless), "100");
+        assert_eq!(format_sig(-2.5004, Unit::Volt), "-2.5V");
+    }
 
     fn si(text: &str, unit: Unit) -> f64 {
         parse_quantity(text, unit).unwrap().si

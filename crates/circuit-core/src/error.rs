@@ -45,6 +45,12 @@ pub enum ErrorCode {
     AnalysisInvalid,
     /// The author is not allowed to emit this op (e.g. `part.pin` is user-only).
     Forbidden,
+    /// No block template with this id in the registry.
+    TemplateNotFound,
+    /// A template target or rail voltage is malformed or outside the template's range.
+    TargetOutOfRange,
+    /// A port binding names a net that cannot carry that port (wrong kind, missing, ground misuse).
+    PortInvalid,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq, thiserror::Error)]

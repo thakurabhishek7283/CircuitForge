@@ -162,6 +162,28 @@ pub fn erc(c: &Circuit, reg: &Registry, ctx: ErcContext, scope: Option<&str>) ->
     out
 }
 
+/// Supply rails nothing drives: no voltage source and no IC output (a regulator's) on them.
+/// A rail flag is a supply, so the compiler simulates each as an ideal source at its declared
+/// volts and ERC003 counts it as tied to ground.
+pub fn implicit_supplies(c: &Circuit, reg: &Registry) -> Vec<(NetId, f64)> {
+    let driven = |p: &PinRef| {
+        c.parts
+            .get(&p.refdes)
+            .and_then(|i| reg.part(&i.part))
+            .is_some_and(|d| d.category == Category::V || d.pin(&p.pin).is_some_and(|pd| pd.kind == PinType::Output))
+    };
+    let mut out: Vec<(NetId, f64)> = c
+        .nets
+        .values()
+        .filter_map(|n| match n.kind {
+            NetKind::Power { volts } if !n.pins.iter().any(driven) => Some((n.id.clone(), volts)),
+            _ => None,
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
 /// Nets with no DC path to GND (ERC003). The SPICE compiler shunts these for user circuits.
 pub fn floating_nets(c: &Circuit, reg: &Registry) -> Vec<NetId> {
     let g = Graph::new(c, reg);
@@ -175,6 +197,7 @@ pub fn floating_nets(c: &Circuit, reg: &Registry) -> Vec<NetId> {
 /// Read-only view with the registry joined in, parts in natural refdes order.
 struct Graph<'a> {
     c: &'a Circuit,
+    reg: &'a Registry,
     parts: Vec<(&'a PartInstance, &'a PartDef)>,
     pin_net: BTreeMap<&'a PinRef, &'a NetId>,
 }
@@ -189,7 +212,7 @@ impl<'a> Graph<'a> {
                 reg.part(&inst.part).map(|d| (inst, d))
             })
             .collect();
-        Graph { c, parts, pin_net: c.pin_index() }
+        Graph { c, reg, parts, pin_net: c.pin_index() }
     }
 
     fn net_of(&self, refdes: &str, pin: &str) -> Option<&'a NetId> {
@@ -274,8 +297,12 @@ fn floating_and_unused(g: &Graph, f: &mut Vec<Finding>) {
     }
 }
 
+/// A ground or an undriven rail with one pin is not dangling: its flag connects that pin to the
+/// ground reference or to the rail's (implicit) supply.
 fn dangling_nets(g: &Graph, f: &mut Vec<Finding>) {
-    for net in g.c.nets.values().filter(|n| n.pins.len() < 2) {
+    let rails: BTreeSet<NetId> = implicit_supplies(g.c, g.reg).into_iter().map(|(n, _)| n).collect();
+    let flagged = |n: &Net| n.kind == NetKind::Ground || rails.contains(&n.id);
+    for net in g.c.nets.values().filter(|n| n.pins.len() < 2 && !(n.pins.len() == 1 && flagged(n))) {
         f.push(
             Finding::new(ErcCode::DanglingNet, format!("{} connects only {} pin", net.id, net.pins.len()))
                 .nets([net.id.clone()])
@@ -300,6 +327,12 @@ fn no_dc_path(g: &Graph, f: &mut Vec<Finding>) {
         let nets = dc_pins(g, inst, def);
         for w in nets.windows(2) {
             dsu.union(w[0], w[1]);
+        }
+    }
+    if g.c.nets.contains_key(GND) {
+        let rails: BTreeSet<NetId> = implicit_supplies(g.c, g.reg).into_iter().map(|(n, _)| n).collect();
+        for id in g.c.nets.keys().filter(|id| rails.contains(*id)) {
+            dsu.union(id, GND);
         }
     }
     let gnd_root = g.c.nets.contains_key(GND).then(|| dsu.find(GND));

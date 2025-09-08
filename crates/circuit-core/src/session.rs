@@ -16,6 +16,7 @@ use crate::ir::{Analysis, Block, BlockId, Circuit, LayoutHint, Net, NetId, PartI
 use crate::ops::{Author, Op, OpEnvelope};
 use crate::registry::Registry;
 use crate::spice::{CompileError, CompileOpts, Netlist, compile};
+use crate::template::{self, InsertBlock, Inserted, Preview};
 
 /// What a successful `apply` reports to the UI: only what changed (LLD §10).
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
@@ -120,6 +121,17 @@ impl Session {
     /// Ops for a wire from `from` to `to` ([`edit::connect`]); apply them as one batch.
     pub fn connect(&self, from: &PinRef, to: &WireEnd) -> Result<Vec<Op>, OpError> {
         edit::connect(&self.circuit, &self.reg, from, to)
+    }
+
+    /// Solved values and spec for inserting a template block ([`template::preview`]).
+    pub fn preview_block(&self, req: &InsertBlock) -> Result<Preview, OpError> {
+        template::preview(&self.circuit, &self.reg, req)
+    }
+
+    /// Ops that insert a template block ([`template::instantiate`]); apply them as one batch with
+    /// author `template`.
+    pub fn insert_block(&self, req: &InsertBlock) -> Result<Inserted, OpError> {
+        template::instantiate(&self.circuit, &self.reg, req)
     }
 }
 
@@ -247,6 +259,36 @@ pub mod json_api {
             .parse::<PinRef>()
             .map_err(|e| schema_err("from", e))
             .and_then(|from| s.connect(&from, &parse::<WireEnd>("to", to_json)?));
+        outcome(r)
+    }
+
+    /// `req_json` is an `InsertBlock` → `Outcome<Preview, OpError>`.
+    pub fn preview_block(s: &Session, req_json: &str) -> String {
+        outcome(parse::<InsertBlock>("insert block", req_json).and_then(|r| s.preview_block(&r)))
+    }
+
+    /// `req_json` is an `InsertBlock` → `Outcome<Inserted, OpError>`.
+    pub fn insert_block(s: &Session, req_json: &str) -> String {
+        outcome(parse::<InsertBlock>("insert block", req_json).and_then(|r| s.insert_block(&r)))
+    }
+
+    /// `checks_json` is `Netlist.checks`, `meas_json` the result's `meas` (name -> value)
+    /// → `Outcome<[CheckResult], OpError>`.
+    pub fn evaluate_checks(checks_json: &str, meas_json: &str) -> String {
+        let r = parse::<Vec<template::SpecCheckDef>>("checks", checks_json).and_then(|defs| {
+            let meas: std::collections::BTreeMap<String, f64> = parse("meas", meas_json)?;
+            Ok(template::evaluate_checks(&defs, &meas))
+        });
+        outcome(r)
+    }
+
+    /// The 5 points CI verifies a template at → `Outcome<[VerifyPoint], OpError>`.
+    pub fn verify_points(reg: &Registry, template_id: &str) -> String {
+        let r = reg
+            .templates
+            .get(template_id)
+            .map(template::verify_points)
+            .ok_or_else(|| OpError::new(ErrorCode::TemplateNotFound, format!("no block template {template_id}")));
         outcome(r)
     }
 

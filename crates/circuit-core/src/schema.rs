@@ -17,6 +17,7 @@ use crate::registry::Registry;
 use crate::session::json_api::Outcome;
 use crate::session::{ApplyOk, PatchData};
 use crate::spice::{CompileError, CompileOpts, Netlist};
+use crate::template::{CheckResult, InsertBlock, Inserted, Preview, VerifyPoint};
 
 /// `(file name, schema)` for each contract type, in a fixed order.
 pub fn all_schemas() -> Vec<(&'static str, Value)> {
@@ -62,6 +63,11 @@ pub fn contract_schema() -> Value {
     add::<CompileError>(&mut generator);
     add::<Registry>(&mut generator);
     add::<WireEnd>(&mut generator);
+    add::<InsertBlock>(&mut generator);
+    add::<Preview>(&mut generator);
+    add::<Inserted>(&mut generator);
+    add::<CheckResult>(&mut generator);
+    add::<VerifyPoint>(&mut generator);
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "Contract",

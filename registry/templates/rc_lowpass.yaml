@@ -1,0 +1,21 @@
+id: rc_lowpass
+version: 1
+role: filter
+title: RC low-pass filter
+teach: "C shorts high frequencies to ground through R: above fc = 1/(2πRC) the output falls 20 dB per decade."
+targets:
+  fc_hz: {label: Cutoff frequency, unit: hertz, min: 10, max: 100k, default: 1k, scale: log}
+ports: {in: input, out: output, gnd: ground}
+parts:
+  R1: {part: resistor_th}
+  C1: {part: cap_film}
+nets:
+  in: [R1.1]
+  out: [R1.2, C1.1]
+  gnd: [C1.2]
+solver: rc_first_order
+checks:
+  - {name: fc_hz, label: Cutoff (−3 dB), symbol: "fc", kind: ac_corner, out: out, pass: low, tol_pct: 10}
+verify:
+  drive: {in: {amplitude: 1, frequency: 100}}
+  load: {out: 1meg}

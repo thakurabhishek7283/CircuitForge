@@ -1329,6 +1329,21 @@
           "type": "string",
           "const": "forbidden",
           "description": "The author is not allowed to emit this op (e.g. `part.pin` is user-only)."
+        },
+        {
+          "type": "string",
+          "const": "template_not_found",
+          "description": "No block template with this id in the registry."
+        },
+        {
+          "type": "string",
+          "const": "target_out_of_range",
+          "description": "A template target or rail voltage is malformed or outside the template's range."
+        },
+        {
+          "type": "string",
+          "const": "port_invalid",
+          "description": "A port binding names a net that cannot carry that port (wrong kind, missing, ground misuse)."
         }
       ],
       "description": "Error codes returned by `apply()`. These go back to the LLM verbatim during repair and are\nshown to users as friendly text (LLD §4). Additive only within a protocol major version."
@@ -1669,7 +1684,14 @@
           "items": {
             "$ref": "#/$defs/MeasDef"
           },
-          "description": "Spec checks as `.meas` statements (filled once block templates define them)."
+          "description": "Spec checks as primitive `.meas` statements, in replay order (later cards may use earlier\nresults)."
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SpecCheckDef"
+          },
+          "description": "The spec checks of every template block, and which `meas` results each combines\n([`crate::template::evaluate_checks`])."
         },
         "pin_currents": {
           "type": "object",
@@ -1695,6 +1717,7 @@
         "node_map",
         "includes",
         "meas",
+        "checks",
         "pin_currents",
         "analyses"
       ]
@@ -1713,6 +1736,118 @@
         "name",
         "line"
       ]
+    },
+    "SpecCheckDef": {
+      "type": "object",
+      "properties": {
+        "block": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/CheckKind"
+        },
+        "unit": {
+          "$ref": "#/$defs/Unit"
+        },
+        "target": {
+          "type": "number",
+          "format": "double"
+        },
+        "tol_pct": {
+          "type": "number",
+          "format": "double"
+        },
+        "meas": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "`.meas` result names, in the order the kind combines them. Empty when `missing` is set."
+        },
+        "missing": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Why the check could not be compiled into this netlist (\"needs an AC analysis\")."
+        }
+      },
+      "required": [
+        "block",
+        "name",
+        "label",
+        "symbol",
+        "kind",
+        "unit",
+        "target",
+        "tol_pct",
+        "meas"
+      ],
+      "description": "A check as compiled into one netlist: which `.meas` results it combines."
+    },
+    "CheckKind": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "ac_corner",
+          "description": "−3 dB frequency below the pass-band gain (AC)."
+        },
+        {
+          "type": "string",
+          "const": "ac_q",
+          "description": "Q of a 2nd-order low/high-pass: |H(f0)| / pass-band gain, f0 at the ∓90° phase point (AC).\nAssumes the input port is driven with flat phase (a source or a buffer)."
+        },
+        {
+          "type": "string",
+          "const": "ac_gain",
+          "description": "|V(out)| / |V(in)| at `at_hz` (AC)."
+        },
+        {
+          "type": "string",
+          "const": "ac_center",
+          "description": "Band-pass centre, √(f_lo·f_hi) of the −3 dB points around the peak (AC)."
+        },
+        {
+          "type": "string",
+          "const": "ac_band_q",
+          "description": "Band-pass Q, centre / (f_hi − f_lo) (AC)."
+        },
+        {
+          "type": "string",
+          "const": "tran_freq",
+          "description": "Frequency of a periodic output: two periods between rising crossings of mid-level, in the\nsecond half of the transient (tran)."
+        },
+        {
+          "type": "string",
+          "const": "tran_duty",
+          "description": "Share of a period the output is high, from its average over two periods (tran)."
+        },
+        {
+          "type": "string",
+          "const": "tran_amplitude",
+          "description": "Half the peak-to-peak output (tran)."
+        },
+        {
+          "type": "string",
+          "const": "dc_level",
+          "description": "Average output over the transient: the DC level (ngspice `.meas` has no OP mode)."
+        },
+        {
+          "type": "string",
+          "const": "tran_threshold",
+          "description": "Input level at the 2nd rising/falling output edge: a comparator threshold (tran)."
+        }
+      ],
+      "description": "LLD §7 spec checks. Each is a few primitive ngspice `.meas` results combined by\n[`evaluate_checks`] (ngspice cannot measure an expression such as `vdb(out)-vdb(in)`)."
     },
     "CurrentTerm": {
       "type": "object",
@@ -1767,6 +1902,14 @@
             "$ref": "#/$defs/SymbolDef"
           },
           "description": "Schematic symbols by id (`symbols/<id>.svg`): geometry only; the drawings ship in the\nbundle's sprite sheet."
+        },
+        "templates": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/TemplateDef"
+          },
+          "description": "Block templates by id (`templates/<id>.yaml`), each checked against the parts at load.",
+          "default": {}
         }
       },
       "required": [
@@ -2064,6 +2207,357 @@
         "bottom"
       ]
     },
+    "TemplateDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "role": {
+          "$ref": "#/$defs/BlockRole"
+        },
+        "title": {
+          "type": "string"
+        },
+        "teach": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/TargetDef"
+          },
+          "description": "What the user asks for, in order (the insert form shows them in this order).",
+          "default": {}
+        },
+        "ports": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PortDirection"
+          },
+          "description": "The block's interface: port name -> direction."
+        },
+        "rails": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/RailDef"
+          },
+          "description": "The supply each power port expects: default rail and the range the design works over.",
+          "default": {}
+        },
+        "parts": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/TemplatePart"
+          },
+          "description": "Local refdes (R1, C1, U1, ...) -> registry part. Renumbered on instantiation."
+        },
+        "nets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/PinRef"
+            }
+          },
+          "description": "Port or internal net name -> pins (`R1.2`, `U1.OUT_A`). Every port has one."
+        },
+        "solver": {
+          "type": "string",
+          "description": "A solver in [`solvers`], by name."
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckDef"
+          }
+        },
+        "verify": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerifyBench"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The test bench CI simulates the template in (LLD §12 step 2)."
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "role",
+        "title",
+        "ports",
+        "parts",
+        "nets",
+        "solver",
+        "checks"
+      ]
+    },
+    "TargetDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/Unit"
+        },
+        "min": {
+          "type": "number",
+          "format": "double",
+          "description": "In SI units; YAML may write `10`, `50k` or `1meg`."
+        },
+        "max": {
+          "type": "number",
+          "format": "double"
+        },
+        "default": {
+          "type": "string",
+          "description": "As the user would type it."
+        },
+        "scale": {
+          "$ref": "#/$defs/Scale",
+          "description": "How verification spreads its points (frequencies and gains are `log`).",
+          "default": "lin"
+        }
+      },
+      "required": [
+        "label",
+        "unit",
+        "min",
+        "max",
+        "default"
+      ]
+    },
+    "Scale": {
+      "type": "string",
+      "enum": [
+        "lin",
+        "log"
+      ]
+    },
+    "RailDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "net": {
+          "type": "string",
+          "description": "The rail this port binds to by default (created if missing)."
+        },
+        "volts": {
+          "type": "number",
+          "format": "double"
+        },
+        "min": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "description": "The supply range the design is verified over; absent means exactly `volts`."
+        },
+        "max": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        }
+      },
+      "required": [
+        "net",
+        "volts"
+      ]
+    },
+    "TemplatePart": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "part": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "part"
+      ]
+    },
+    "CheckDef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string",
+          "description": "A few characters for badges on the drawing: `fc`, `Q`, `Vth+`."
+        },
+        "kind": {
+          "$ref": "#/$defs/CheckKind"
+        },
+        "out": {
+          "type": "string",
+          "description": "Output port measured."
+        },
+        "in": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Input port (gain reference, threshold input)."
+        },
+        "pass": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Pass"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Which side of a corner is the pass band (corner and Q checks)."
+        },
+        "edge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Edge"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Output edge whose input level is the threshold (threshold checks)."
+        },
+        "at_hz": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double",
+          "description": "Frequency a gain is measured at; default 1 kHz."
+        },
+        "tran": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TranWindow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The transient a time-domain check needs. Regenerative circuits (a Schmitt trigger) switch\nlate in simulation unless the steps are near the op-amp's own speed: with coarse steps the\nintegrator follows the unstable balance point until it hits a rail."
+        },
+        "tol_pct": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "symbol",
+        "kind",
+        "out",
+        "tol_pct"
+      ],
+      "description": "One spec check: what to measure (a closed set of kinds, so a template can never inject SPICE)\non which ports. Its target is the block's `spec[name]`."
+    },
+    "Pass": {
+      "type": "string",
+      "enum": [
+        "low",
+        "high"
+      ]
+    },
+    "Edge": {
+      "type": "string",
+      "enum": [
+        "rise",
+        "fall"
+      ]
+    },
+    "TranWindow": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "stop": {
+          "type": "number",
+          "format": "double",
+          "description": "Run length, seconds."
+        },
+        "step": {
+          "type": "number",
+          "format": "double",
+          "description": "Largest step, seconds."
+        }
+      },
+      "required": [
+        "stop",
+        "step"
+      ]
+    },
+    "VerifyBench": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "drive": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Drive"
+          },
+          "description": "A sine source from each listed port to ground.",
+          "default": {}
+        },
+        "load": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          },
+          "description": "A resistor from each listed port to ground, in ohms.",
+          "default": {}
+        }
+      }
+    },
+    "Drive": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "amplitude": {
+          "type": "number",
+          "format": "double"
+        },
+        "frequency": {
+          "type": "number",
+          "format": "double"
+        },
+        "offset": {
+          "type": "number",
+          "format": "double",
+          "default": 0.0
+        }
+      },
+      "required": [
+        "amplitude",
+        "frequency"
+      ]
+    },
     "WireEnd": {
       "oneOf": [
         {
@@ -2116,6 +2610,265 @@
         }
       ],
       "description": "Where a wire ends: a pin, an existing net (a wire or a power/ground flag of it), or a supply\nrail, which is created with its kind if it does not exist yet (the editor's GND and rail tools)."
+    },
+    "InsertBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "template": {
+          "type": "string"
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Target values as typed (\"1k\", \"0.707\"); a missing target takes the template default.",
+          "default": {}
+        },
+        "ports": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PortBinding"
+          },
+          "description": "How each port is wired; a missing port takes its default (signals: a new net; power: the\ntemplate's rail; ground: GND).",
+          "default": {}
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Block id; default the lowest free `bN`."
+        }
+      },
+      "required": [
+        "template"
+      ],
+      "description": "Insert a block from a template (the editor's \"insert block\", the generator's fallback)."
+    },
+    "PortBinding": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "net": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "net"
+          ],
+          "additionalProperties": false,
+          "description": "An existing net (for a power port: an existing rail, whose voltage the solver uses)."
+        },
+        {
+          "type": "string",
+          "const": "new",
+          "description": "A new net named after the block and port (`B2_IN`)."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "rail": {
+              "type": "object",
+              "properties": {
+                "net": {
+                  "type": "string"
+                },
+                "volts": {
+                  "type": "number",
+                  "format": "double"
+                }
+              },
+              "required": [
+                "net",
+                "volts"
+              ]
+            }
+          },
+          "required": [
+            "rail"
+          ],
+          "additionalProperties": false,
+          "description": "A supply rail at `volts`, created if it does not exist."
+        }
+      ]
+    },
+    "Preview": {
+      "type": "object",
+      "properties": {
+        "template": {
+          "type": "string"
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/Quantity"
+          }
+        },
+        "rails": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          },
+          "description": "Supply volts per power port."
+        },
+        "values": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/Quantity"
+            }
+          },
+          "description": "Solved part values by the template's local refdes."
+        },
+        "spec": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SpecTarget"
+          },
+          "description": "The block's spec: every check's target and tolerance."
+        },
+        "spec_display": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Each spec target formatted for reading (`1kHz`, `0.707`, `2.5V`)."
+        }
+      },
+      "required": [
+        "template",
+        "targets",
+        "rails",
+        "values",
+        "spec",
+        "spec_display"
+      ],
+      "description": "What inserting would produce, before anything is applied: the insert form shows it."
+    },
+    "Inserted": {
+      "type": "object",
+      "properties": {
+        "block": {
+          "type": "string"
+        },
+        "ops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Op"
+          },
+          "description": "Apply as one batch (author `template`): one undo step."
+        },
+        "refdes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Local refdes -> refdes in the circuit."
+        },
+        "preview": {
+          "$ref": "#/$defs/Preview"
+        }
+      },
+      "required": [
+        "block",
+        "ops",
+        "refdes",
+        "preview"
+      ]
+    },
+    "CheckResult": {
+      "type": "object",
+      "properties": {
+        "block": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "symbol": {
+          "type": "string"
+        },
+        "unit": {
+          "$ref": "#/$defs/Unit"
+        },
+        "target": {
+          "type": "number",
+          "format": "double"
+        },
+        "tol_pct": {
+          "type": "number",
+          "format": "double"
+        },
+        "measured": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "pass": {
+          "type": "boolean"
+        },
+        "target_display": {
+          "type": "string"
+        },
+        "measured_display": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "note": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Why there is no measurement."
+        }
+      },
+      "required": [
+        "block",
+        "name",
+        "label",
+        "symbol",
+        "unit",
+        "target",
+        "tol_pct",
+        "pass",
+        "target_display"
+      ],
+      "description": "One check's outcome (LLD §7: `{name, target, measured, tol_pct, pass}`), with the numbers\nalready formatted by the core so no client formats units itself."
+    },
+    "VerifyPoint": {
+      "type": "object",
+      "properties": {
+        "targets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "rails": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
+      "required": [
+        "targets",
+        "rails"
+      ],
+      "description": "One verification point: target values as text (what a user would type) and rail volts."
     }
   }
 }

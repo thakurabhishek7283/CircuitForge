@@ -1,0 +1,22 @@
+id: zener_regulator
+version: 1
+role: supply
+title: Zener regulator (5.1 V)
+teach: "R1 drops the extra voltage; the Zener takes whatever current the load does not, holding about 5.1 V."
+targets:
+  i_load_max: {label: Largest load current, unit: ampere, min: 2m, max: 15m, default: 10m}
+ports: {vin: power_pos, out: output, gnd: ground}
+rails:
+  vin: {net: VIN, volts: 12, min: 9, max: 15}
+parts:
+  R1: {part: resistor_th}
+  D1: {part: zener_5v1}
+nets:
+  vin: [R1.1]
+  out: [R1.2, D1.K]
+  gnd: [D1.A]
+solver: zener_regulator
+checks:
+  - {name: vout_v, label: Output voltage, symbol: "Vout", kind: dc_level, out: out, tol_pct: 5}
+verify:
+  load: {out: 2.2k}

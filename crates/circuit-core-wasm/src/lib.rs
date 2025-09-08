@@ -29,6 +29,12 @@ impl CoreRegistry {
     pub fn version(&self) -> String {
         self.inner.version.clone()
     }
+
+    /// The 5 points CI verifies a template at → `{"ok": VerifyPoint[]} | {"err": OpError}`.
+    #[wasm_bindgen(js_name = verifyPoints)]
+    pub fn verify_points(&self, template: &str) -> String {
+        api::verify_points(&self.inner, template)
+    }
 }
 
 #[wasm_bindgen]
@@ -93,6 +99,20 @@ impl CoreSession {
         api::connect(&self.inner, from, to)
     }
 
+    /// Solved part values and spec for inserting a template block (`InsertBlock` JSON)
+    /// → `{"ok": Preview} | {"err": OpError}`.
+    #[wasm_bindgen(js_name = previewBlock)]
+    pub fn preview_block(&self, req: &str) -> String {
+        api::preview_block(&self.inner, req)
+    }
+
+    /// Ops that insert a template block (`InsertBlock` JSON) → `{"ok": Inserted} | {"err": OpError}`.
+    /// Apply `ops` as one batch with author `"template"`.
+    #[wasm_bindgen(js_name = insertBlock)]
+    pub fn insert_block(&self, req: &str) -> String {
+        api::insert_block(&self.inner, req)
+    }
+
     /// The full `Circuit` JSON.
     pub fn snapshot(&self) -> String {
         api::snapshot(&self.inner)
@@ -120,6 +140,13 @@ impl CoreSession {
 #[wasm_bindgen(js_name = parseQuantity)]
 pub fn parse_quantity(text: &str, unit: &str) -> String {
     api::parse_quantity(text, unit)
+}
+
+/// Spec check results from a netlist's `checks` and a simulation's `meas`
+/// → `{"ok": CheckResult[]} | {"err": OpError}`.
+#[wasm_bindgen(js_name = evaluateChecks)]
+pub fn evaluate_checks(checks: &str, meas: &str) -> String {
+    api::evaluate_checks(checks, meas)
 }
 
 /// circuit-core version, for the `X-Min-Client` skew check (LLD §14).

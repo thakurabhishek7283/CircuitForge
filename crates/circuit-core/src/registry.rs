@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::ir::PartId;
 use crate::symbol::{FLAG_GROUND, FLAG_PIN, FLAG_POWER, SymbolDef, symbol_id};
+use crate::template::TemplateDef;
 use crate::units::{Unit, parse_quantity};
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
@@ -18,6 +19,9 @@ pub struct Registry {
     /// Schematic symbols by id (`symbols/<id>.svg`): geometry only; the drawings ship in the
     /// bundle's sprite sheet.
     pub symbols: BTreeMap<String, SymbolDef>,
+    /// Block templates by id (`templates/<id>.yaml`), each checked against the parts at load.
+    #[serde(default)]
+    pub templates: IndexMap<String, TemplateDef>,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -350,12 +354,15 @@ fn check_placeholders(line: &str, known: impl Fn(&str) -> bool) -> Vec<String> {
 }
 
 impl Registry {
-    /// Build and validate a registry. Each part is paired with a source name for error messages.
-    /// Every part needs a symbol whose anchors match its pins, and the flag symbols must exist.
+    /// Build and validate a registry. Each part and template is paired with a source name for
+    /// error messages. Every part needs a symbol whose anchors match its pins, and the flag
+    /// symbols must exist; every template must name known parts, pins, ports and a solver that
+    /// solves it.
     pub fn new(
         version: impl Into<String>,
         parts: impl IntoIterator<Item = (String, PartDef)>,
         symbols: BTreeMap<String, SymbolDef>,
+        templates: impl IntoIterator<Item = (String, TemplateDef)>,
     ) -> Result<Registry, Vec<RegistryError>> {
         let mut errs = Vec::new();
         let mut map = IndexMap::new();
@@ -395,23 +402,45 @@ impl Registry {
                 errs.push(RegistryError { source_name: p.id.clone(), message });
             }
         }
-        if errs.is_empty() { Ok(Registry { version: version.into(), parts: map, symbols }) } else { Err(errs) }
+        let mut tmap = IndexMap::new();
+        for (source_name, t) in templates {
+            for message in t.validate(&map) {
+                errs.push(RegistryError { source_name: source_name.clone(), message });
+            }
+            if tmap.contains_key(&t.id) {
+                errs.push(RegistryError { source_name, message: format!("duplicate template id {}", t.id) });
+                continue;
+            }
+            tmap.insert(t.id.clone(), t);
+        }
+        if errs.is_empty() {
+            Ok(Registry { version: version.into(), parts: map, symbols, templates: tmap })
+        } else {
+            Err(errs)
+        }
     }
 
     /// Load the compiled JSON bundle (what the browser and API receive).
     pub fn from_json(json: &str) -> Result<Registry, Vec<RegistryError>> {
         let raw: Registry = serde_json::from_str(json)
             .map_err(|e| vec![RegistryError { source_name: "bundle".into(), message: e.to_string() }])?;
-        Registry::new(raw.version, raw.parts.into_values().map(|p| (p.id.clone(), p)), raw.symbols)
+        Registry::new(
+            raw.version,
+            raw.parts.into_values().map(|p| (p.id.clone(), p)),
+            raw.symbols,
+            raw.templates.into_values().map(|t| (t.id.clone(), t)),
+        )
     }
 
-    /// Load YAML part sources and SVG symbol sources: `(file_name, text)` each, symbols named
-    /// `<id>.svg`. Returns the registry and the sprite sheet of its symbols (LLD §12 step 1).
+    /// Load YAML part sources, SVG symbol sources and YAML template sources: `(file_name, text)`
+    /// each, symbols named `<id>.svg`. Returns the registry and the sprite sheet of its symbols
+    /// (LLD §12 step 1).
     #[cfg(feature = "sources")]
     pub fn from_sources<'a>(
         version: impl Into<String>,
         part_docs: impl IntoIterator<Item = (&'a str, &'a str)>,
         symbol_docs: impl IntoIterator<Item = (&'a str, &'a str)>,
+        template_docs: impl IntoIterator<Item = (&'a str, &'a str)>,
     ) -> Result<Loaded, Vec<RegistryError>> {
         let mut errs = Vec::new();
         let mut parts = Vec::new();
@@ -436,8 +465,20 @@ impl Registry {
                     .extend(es.into_iter().map(|message| RegistryError { source_name: source_name.clone(), message })),
             }
         }
+        let mut templates = Vec::new();
+        for (name, text) in template_docs {
+            let source_name = format!("templates/{name}");
+            match serde_norway::from_str::<TemplateDef>(text) {
+                Ok(t) if format!("{}.yaml", t.id) == name => templates.push((source_name, t)),
+                Ok(t) => errs.push(RegistryError {
+                    source_name,
+                    message: format!("template {} must be in {}.yaml", t.id, t.id),
+                }),
+                Err(e) => errs.push(RegistryError { source_name, message: e.to_string() }),
+            }
+        }
         let symbols = parsed.iter().map(|(id, s)| (id.clone(), s.def.clone())).collect();
-        let built = Registry::new(version, parts, symbols);
+        let built = Registry::new(version, parts, symbols, templates);
         match built {
             Ok(registry) if errs.is_empty() => {
                 let sprite_sheet = crate::symbol::sprite_sheet(parsed.iter().map(|(id, s)| (id.as_str(), s)));
@@ -457,8 +498,9 @@ impl Registry {
         version: impl Into<String>,
         part_docs: impl IntoIterator<Item = (&'a str, &'a str)>,
         symbol_docs: impl IntoIterator<Item = (&'a str, &'a str)>,
+        template_docs: impl IntoIterator<Item = (&'a str, &'a str)>,
     ) -> Result<Registry, Vec<RegistryError>> {
-        Registry::from_sources(version, part_docs, symbol_docs).map(|l| l.registry)
+        Registry::from_sources(version, part_docs, symbol_docs, template_docs).map(|l| l.registry)
     }
 
     pub fn part(&self, id: &str) -> Option<&PartDef> {

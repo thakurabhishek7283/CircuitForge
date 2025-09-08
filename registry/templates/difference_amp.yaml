@@ -1,0 +1,34 @@
+id: difference_amp
+version: 1
+role: amplifier
+title: Difference amplifier
+teach: "Amplifies V(in_p) − V(in_n) by R2/R1 and rejects what both inputs share, if R4/R3 matches R2/R1."
+targets:
+  gain: {label: Gain (V/V), unit: unitless, min: 1, max: 10, default: "2", scale: log}
+ports: {in_p: input, in_n: input, out: output, vcc: power_pos, vee: power_neg, gnd: ground}
+rails:
+  vcc: {net: VCC, volts: 12, min: 9, max: 15}
+  vee: {net: VEE, volts: -12, min: -15, max: -9}
+parts:
+  R1: {part: resistor_th}
+  R2: {part: resistor_th}
+  R3: {part: resistor_th}
+  R4: {part: resistor_th}
+  U1: {part: opamp_tl072}
+nets:
+  in_n: [R1.1]
+  n_m: [R1.2, R2.1, U1.INM_A]
+  out: [R2.2, U1.OUT_A]
+  in_p: [R3.1]
+  n_p: [R3.2, R4.1, U1.INP_A]
+  gnd: [R4.2]
+  vcc: [U1.VCC]
+  vee: [U1.VEE]
+solver: difference_amp
+checks:
+  - {name: gain, label: Gain at 1 kHz, symbol: "gain", kind: ac_gain, in: in_p, out: out, tol_pct: 5}
+verify:
+  drive:
+    in_p: {amplitude: 0.1, frequency: 1k}
+    in_n: {amplitude: 0, frequency: 1k}
+  load: {out: 10k}

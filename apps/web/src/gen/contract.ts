@@ -244,7 +244,10 @@ export type ErrorCode =
   | "net_conflict"
   | "block_not_empty"
   | "analysis_invalid"
-  | "forbidden";
+  | "forbidden"
+  | "template_not_found"
+  | "target_out_of_range"
+  | "port_invalid";
 /**
  * This interface was referenced by `Contract`'s JSON-Schema
  * via the `definition` "Outcome".
@@ -284,6 +287,24 @@ export type ErcCode =
  */
 export type Severity = ("warning" | "info") | "error";
 /**
+ * LLD §7 spec checks. Each is a few primitive ngspice `.meas` results combined by
+ * [`evaluate_checks`] (ngspice cannot measure an expression such as `vdb(out)-vdb(in)`).
+ *
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "CheckKind".
+ */
+export type CheckKind =
+  | "ac_corner"
+  | "ac_q"
+  | "ac_gain"
+  | "ac_center"
+  | "ac_band_q"
+  | "tran_freq"
+  | "tran_duty"
+  | "tran_amplitude"
+  | "dc_level"
+  | "tran_threshold";
+/**
  * This interface was referenced by `Contract`'s JSON-Schema
  * via the `definition` "Category".
  */
@@ -300,9 +321,24 @@ export type PinType = ("input" | "output" | "passive" | "power_pos" | "power_neg
 export type Hazard = "mains";
 /**
  * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "Pass".
+ */
+export type Pass = "low" | "high";
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "Edge".
+ */
+export type Edge = "rise" | "fall";
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
  * via the `definition` "Side".
  */
 export type Side = "left" | "right" | "top" | "bottom";
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "Scale".
+ */
+export type Scale = "lin" | "log";
 /**
  * Where a wire ends: a pin, an existing net (a wire or a power/ground flag of it), or a supply
  * rail, which is created with its kind if it does not exist yet (the editor's GND and rail tools).
@@ -321,6 +357,21 @@ export type WireEnd =
       rail: {
         net: string;
         kind: NetKind;
+      };
+    };
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "PortBinding".
+ */
+export type PortBinding =
+  | {
+      net: string;
+    }
+  | "new"
+  | {
+      rail: {
+        net: string;
+        volts: number;
       };
     };
 
@@ -725,9 +776,15 @@ export interface Netlist {
    */
   includes: string[];
   /**
-   * Spec checks as `.meas` statements (filled once block templates define them).
+   * Spec checks as primitive `.meas` statements, in replay order (later cards may use earlier
+   * results).
    */
   meas: MeasDef[];
+  /**
+   * The spec checks of every template block, and which `meas` results each combines
+   * ([`crate::template::evaluate_checks`]).
+   */
+  checks: SpecCheckDef[];
   /**
    * Current into each connected pin (`"R1.1"`), as a sum of saved vectors, for the overlays
    * and current probes. OP and transient plots only: device currents do not exist in AC.
@@ -749,6 +806,30 @@ export interface Netlist {
 export interface MeasDef {
   name: string;
   line: string;
+}
+/**
+ * A check as compiled into one netlist: which `.meas` results it combines.
+ *
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "SpecCheckDef".
+ */
+export interface SpecCheckDef {
+  block: string;
+  name: string;
+  label: string;
+  symbol: string;
+  kind: CheckKind;
+  unit: Unit;
+  target: number;
+  tol_pct: number;
+  /**
+   * `.meas` result names, in the order the kind combines them. Empty when `missing` is set.
+   */
+  meas: string[];
+  /**
+   * Why the check could not be compiled into this netlist ("needs an AC analysis").
+   */
+  missing?: string | null;
 }
 /**
  * `coeff · vector`, e.g. `-1 · @r1[i]`.
@@ -786,6 +867,12 @@ export interface Registry {
    */
   symbols: {
     [k: string]: SymbolDef | undefined;
+  };
+  /**
+   * Block templates by id (`templates/<id>.yaml`), each checked against the parts at load.
+   */
+  templates?: {
+    [k: string]: TemplateDef | undefined;
   };
 }
 /**
@@ -891,4 +978,304 @@ export interface Anchor {
    * The edge the anchor sits on; wires leave the symbol in this direction.
    */
   side: "left" | "right" | "top" | "bottom";
+}
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "TemplateDef".
+ */
+export interface TemplateDef {
+  id: string;
+  version: number;
+  role: BlockRole;
+  title: string;
+  teach?: string | null;
+  /**
+   * What the user asks for, in order (the insert form shows them in this order).
+   */
+  targets?: {
+    [k: string]: TargetDef | undefined;
+  };
+  /**
+   * The block's interface: port name -> direction.
+   */
+  ports: {
+    [k: string]: PortDirection | undefined;
+  };
+  /**
+   * The supply each power port expects: default rail and the range the design works over.
+   */
+  rails?: {
+    [k: string]: RailDef | undefined;
+  };
+  /**
+   * Local refdes (R1, C1, U1, ...) -> registry part. Renumbered on instantiation.
+   */
+  parts: {
+    [k: string]: TemplatePart | undefined;
+  };
+  /**
+   * Port or internal net name -> pins (`R1.2`, `U1.OUT_A`). Every port has one.
+   */
+  nets: {
+    [k: string]: PinRef[] | undefined;
+  };
+  /**
+   * A solver in [`solvers`], by name.
+   */
+  solver: string;
+  checks: CheckDef[];
+  /**
+   * The test bench CI simulates the template in (LLD §12 step 2).
+   */
+  verify?: VerifyBench | null;
+}
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "TargetDef".
+ */
+export interface TargetDef {
+  label: string;
+  unit: Unit;
+  /**
+   * In SI units; YAML may write `10`, `50k` or `1meg`.
+   */
+  min: number;
+  max: number;
+  /**
+   * As the user would type it.
+   */
+  default: string;
+  /**
+   * How verification spreads its points (frequencies and gains are `log`).
+   */
+  scale?: "lin" | "log";
+}
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "RailDef".
+ */
+export interface RailDef {
+  /**
+   * The rail this port binds to by default (created if missing).
+   */
+  net: string;
+  volts: number;
+  /**
+   * The supply range the design is verified over; absent means exactly `volts`.
+   */
+  min?: number | null;
+  max?: number | null;
+}
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "TemplatePart".
+ */
+export interface TemplatePart {
+  part: string;
+}
+/**
+ * One spec check: what to measure (a closed set of kinds, so a template can never inject SPICE)
+ * on which ports. Its target is the block's `spec[name]`.
+ *
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "CheckDef".
+ */
+export interface CheckDef {
+  name: string;
+  label: string;
+  /**
+   * A few characters for badges on the drawing: `fc`, `Q`, `Vth+`.
+   */
+  symbol: string;
+  kind: CheckKind;
+  /**
+   * Output port measured.
+   */
+  out: string;
+  /**
+   * Input port (gain reference, threshold input).
+   */
+  in?: string | null;
+  /**
+   * Which side of a corner is the pass band (corner and Q checks).
+   */
+  pass?: Pass | null;
+  /**
+   * Output edge whose input level is the threshold (threshold checks).
+   */
+  edge?: Edge | null;
+  /**
+   * Frequency a gain is measured at; default 1 kHz.
+   */
+  at_hz?: number | null;
+  /**
+   * The transient a time-domain check needs. Regenerative circuits (a Schmitt trigger) switch
+   * late in simulation unless the steps are near the op-amp's own speed: with coarse steps the
+   * integrator follows the unstable balance point until it hits a rail.
+   */
+  tran?: TranWindow | null;
+  tol_pct: number;
+}
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "TranWindow".
+ */
+export interface TranWindow {
+  /**
+   * Run length, seconds.
+   */
+  stop: number;
+  /**
+   * Largest step, seconds.
+   */
+  step: number;
+}
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "VerifyBench".
+ */
+export interface VerifyBench {
+  /**
+   * A sine source from each listed port to ground.
+   */
+  drive?: {
+    [k: string]: Drive | undefined;
+  };
+  /**
+   * A resistor from each listed port to ground, in ohms.
+   */
+  load?: {
+    [k: string]: number | undefined;
+  };
+}
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "Drive".
+ */
+export interface Drive {
+  amplitude: number;
+  frequency: number;
+  offset?: number;
+}
+/**
+ * Insert a block from a template (the editor's "insert block", the generator's fallback).
+ *
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "InsertBlock".
+ */
+export interface InsertBlock {
+  template: string;
+  /**
+   * Target values as typed ("1k", "0.707"); a missing target takes the template default.
+   */
+  targets?: {
+    [k: string]: string | undefined;
+  };
+  /**
+   * How each port is wired; a missing port takes its default (signals: a new net; power: the
+   * template's rail; ground: GND).
+   */
+  ports?: {
+    [k: string]: PortBinding | undefined;
+  };
+  /**
+   * Block id; default the lowest free `bN`.
+   */
+  id?: string | null;
+}
+/**
+ * What inserting would produce, before anything is applied: the insert form shows it.
+ *
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "Preview".
+ */
+export interface Preview {
+  template: string;
+  targets: {
+    [k: string]: Quantity | undefined;
+  };
+  /**
+   * Supply volts per power port.
+   */
+  rails: {
+    [k: string]: number | undefined;
+  };
+  /**
+   * Solved part values by the template's local refdes.
+   */
+  values: {
+    [k: string]:
+      | {
+          [k: string]: Quantity | undefined;
+        }
+      | undefined;
+  };
+  /**
+   * The block's spec: every check's target and tolerance.
+   */
+  spec: {
+    [k: string]: SpecTarget | undefined;
+  };
+  /**
+   * Each spec target formatted for reading (`1kHz`, `0.707`, `2.5V`).
+   */
+  spec_display: {
+    [k: string]: string | undefined;
+  };
+}
+/**
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "Inserted".
+ */
+export interface Inserted {
+  block: string;
+  /**
+   * Apply as one batch (author `template`): one undo step.
+   */
+  ops: Op[];
+  /**
+   * Local refdes -> refdes in the circuit.
+   */
+  refdes: {
+    [k: string]: string | undefined;
+  };
+  preview: Preview;
+}
+/**
+ * One check's outcome (LLD §7: `{name, target, measured, tol_pct, pass}`), with the numbers
+ * already formatted by the core so no client formats units itself.
+ *
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "CheckResult".
+ */
+export interface CheckResult {
+  block: string;
+  name: string;
+  label: string;
+  symbol: string;
+  unit: Unit;
+  target: number;
+  tol_pct: number;
+  measured?: number | null;
+  pass: boolean;
+  target_display: string;
+  measured_display?: string | null;
+  /**
+   * Why there is no measurement.
+   */
+  note?: string | null;
+}
+/**
+ * One verification point: target values as text (what a user would type) and rail volts.
+ *
+ * This interface was referenced by `Contract`'s JSON-Schema
+ * via the `definition` "VerifyPoint".
+ */
+export interface VerifyPoint {
+  targets: {
+    [k: string]: string | undefined;
+  };
+  rails: {
+    [k: string]: number | undefined;
+  };
 }

@@ -63,3 +63,31 @@ test("edit helpers: nextRefdes and connect", () => {
   assert.equal(JSON.parse(s.connect("C2.2", JSON.stringify({ net: "N1" }))).err.code, "pin_already_connected");
   assert.equal(JSON.parse(s.connect("C2", "{}")).err.code, "schema_error");
 });
+
+test("block templates: preview, insert, verify points, spec checks", () => {
+  const s = new core.CoreSession(registry);
+  const req = JSON.stringify({ template: "sallen_key_lp", targets: { fc_hz: "2k" } });
+  const preview = JSON.parse(s.previewBlock(req)).ok;
+  assert.equal(preview.targets.fc_hz.display, "2kHz");
+  assert.deepEqual(Object.keys(preview.values).sort(), ["C1", "C2", "R1", "R2", "U1"]);
+  const ins = JSON.parse(s.insertBlock(req)).ok;
+  assert.equal(ins.block, "b1");
+  assert.equal(ins.ops[0].op, "block.begin");
+  assert.equal(ins.ops.at(-1).op, "block.commit");
+  JSON.parse(s.applyOps(JSON.stringify(ins.ops), "template")).ok;
+  assert.equal(JSON.parse(s.snapshot()).parts.U1.origin.kind, "template");
+  assert.equal(JSON.parse(s.insertBlock(JSON.stringify({ template: "nope" }))).err.code, "template_not_found");
+
+  let netlist = JSON.parse(s.compile('{"interactive": true}')).ok;
+  assert.match(netlist.checks[0].missing, /needs a signal/);
+  const src = JSON.parse(s.insertBlock(JSON.stringify({ template: "sine_source", ports: { out: { net: "B1_IN" } } }))).ok;
+  JSON.parse(s.applyOps(JSON.stringify(src.ops), "template")).ok;
+  netlist = JSON.parse(s.compile('{"interactive": true}')).ok;
+  assert.deepEqual(netlist.checks.map((c) => c.name), ["fc_hz", "q", "amplitude_v"]);
+  const meas = { b1_fc_hz_ref: 0, b1_fc_hz_x: 2050 };
+  const results = JSON.parse(core.evaluateChecks(JSON.stringify(netlist.checks), JSON.stringify(meas))).ok;
+  assert.equal(results[0].pass, true);
+  assert.equal(results[0].measured_display, "2.05kHz");
+  assert.equal(results[1].pass, false);
+  assert.equal(JSON.parse(registry.verifyPoints("sallen_key_lp")).ok.length, 5);
+});

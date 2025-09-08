@@ -37,7 +37,7 @@ const POWER: &str =
     r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><circle data-pin="P" cx="10" cy="20"/></svg>"#;
 
 fn load_with(yaml: &str, symbols: &[(&str, &str)]) -> String {
-    let errs = Registry::from_yaml_docs("t", [("bad.yaml", yaml)], symbols.iter().copied()).unwrap_err();
+    let errs = Registry::from_yaml_docs("t", [("bad.yaml", yaml)], symbols.iter().copied(), []).unwrap_err();
     errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n")
 }
 
@@ -72,7 +72,7 @@ fn rejects_symbol_mismatches() {
     let part = |symbol: &str, pins: &str| format!("id: p\ncategory: R\ntitle: t\nsymbol: {symbol}\npins:\n{pins}");
     let two = "  - {name: \"1\", num: 1, type: passive}\n  - {name: \"2\", num: 2, type: passive}\n";
     let symbols = [("two.svg", TWO_PIN), ("flag_ground.svg", GROUND), ("flag_power.svg", POWER)];
-    let ok = Registry::from_sources("t", [("p.yaml", part("symbols/two.svg", two).as_str())], symbols).unwrap();
+    let ok = Registry::from_sources("t", [("p.yaml", part("symbols/two.svg", two).as_str())], symbols, []).unwrap();
     assert_eq!(ok.registry.symbols.len(), 3);
     assert!(ok.sprite_sheet.contains(r#"<symbol id="sym-two" viewBox="0 0 60 20""#));
 

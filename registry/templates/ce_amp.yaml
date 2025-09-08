@@ -1,0 +1,32 @@
+id: ce_amp
+version: 1
+role: amplifier
+title: Common-emitter amplifier
+teach: "R1/R2 bias the base so the collector sits near half the supply; the signal then swings it both ways. Gain ≈ −RC/(RE + 26 mV/IC)."
+targets:
+  gain: {label: Gain (V/V), unit: unitless, min: 2, max: 20, default: "5", scale: log}
+ports: {in: input, out: output, vcc: power_pos, gnd: ground}
+rails:
+  vcc: {net: VCC, volts: 12, min: 9, max: 15}
+parts:
+  R1: {part: resistor_th}
+  R2: {part: resistor_th}
+  R3: {part: resistor_th}
+  R4: {part: resistor_th}
+  C1: {part: cap_film}
+  C2: {part: cap_film}
+  Q1: {part: npn_2n3904}
+nets:
+  in: [C1.1]
+  n_b: [C1.2, R1.2, R2.1, Q1.B]
+  n_c: [R3.2, Q1.C, C2.1]
+  n_e: [Q1.E, R4.1]
+  out: [C2.2]
+  vcc: [R1.1, R3.1]
+  gnd: [R2.2, R4.2]
+solver: ce_amp
+checks:
+  - {name: gain, label: Gain at 1 kHz, symbol: "gain", kind: ac_gain, in: in, out: out, tol_pct: 15}
+verify:
+  drive: {in: {amplitude: 0.01, frequency: 1k}}
+  load: {out: 1meg}

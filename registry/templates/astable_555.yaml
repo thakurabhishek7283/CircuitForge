@@ -1,0 +1,30 @@
+id: astable_555
+version: 1
+role: oscillator
+title: 555 astable oscillator
+teach: "C1 charges through R1 + R2 to ⅔ Vcc, then discharges through R2 to ⅓ Vcc, over and over: f ≈ 1.44 / ((R1 + 2·R2)·C1)."
+targets:
+  freq_hz: {label: Frequency, unit: hertz, min: 1, max: 5k, default: 1k, scale: log}
+  duty: {label: Duty cycle, unit: unitless, min: 0.55, max: 0.9, default: "0.6"}
+ports: {out: output, vcc: power_pos, gnd: ground}
+rails:
+  vcc: {net: VCC, volts: 9, min: 5, max: 15}
+parts:
+  R1: {part: resistor_th}
+  R2: {part: resistor_th}
+  C1: {part: cap_film}
+  C2: {part: cap_film}
+  U1: {part: timer_ne555}
+nets:
+  vcc: [R1.1, U1.VCC, U1.RESET]
+  n_dis: [R1.2, R2.1, U1.DIS]
+  n_thr: [R2.2, C1.1, U1.THR, U1.TRIG]
+  n_ctrl: [C2.1, U1.CTRL]
+  out: [U1.OUT]
+  gnd: [C1.2, C2.2, U1.GND]
+solver: astable_555
+checks:
+  - {name: freq_hz, label: Frequency, symbol: "f", kind: tran_freq, out: out, tol_pct: 10}
+  - {name: duty, label: Duty cycle, symbol: "duty", kind: tran_duty, out: out, tol_pct: 10}
+verify:
+  load: {out: 10k}

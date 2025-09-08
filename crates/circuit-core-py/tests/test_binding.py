@@ -102,6 +102,24 @@ def test_edit_helpers(reg):
     assert "\n.op\n.tran 1e-5 1e-2\n" in netlist["text"]
     assert netlist["pin_currents"]["R1.2"] == [{"vector": "@r1[i]", "coeff": -1.0}]
 
+
+def test_block_templates(reg):
+    assert len(reg.template_ids()) == 20 and "sallen_key_lp" in reg.template_ids()
+    assert len(cc.unwrap(reg.verify_points("rc_lowpass"))) == 5
+    s = cc.Session(reg)
+    req = json.dumps({"template": "rc_lowpass", "targets": {"fc_hz": "159"}})
+    preview = cc.unwrap(s.preview_block(req))
+    assert preview["spec"]["fc_hz"] == {"target": 159.0, "tol_pct": 10.0}
+    ins = cc.unwrap(s.insert_block(req))
+    cc.unwrap(s.apply_ops(json.dumps(ins["ops"]), "template"))
+    netlist = cc.unwrap(s.compile(json.dumps({"interactive": True})))
+    assert [c["name"] for c in netlist["checks"]] == ["fc_hz"]
+    results = cc.unwrap(cc.evaluate_checks(json.dumps(netlist["checks"]), json.dumps({})))
+    assert results[0]["pass"] is False
+    assert results[0]["note"] == "needs a signal: connect a sine source to the block's input"
+    assert json.loads(s.insert_block(json.dumps({"template": "x"})))["err"]["code"] == "template_not_found"
+
+
 def test_heavy_calls_release_the_gil(reg):
     """A trial batch must not block other Python threads (the API's event loop)."""
     s = cc.Session(reg)

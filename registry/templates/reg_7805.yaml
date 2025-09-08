@@ -1,0 +1,22 @@
+id: reg_7805
+version: 1
+role: supply
+title: 5 V regulator (7805)
+teach: "Turns 7–20 V into a steady 5 V rail; the extra voltage times the load current is burned as heat."
+ports: {vin: power_pos, vout: power_pos, gnd: ground}
+rails:
+  vin: {net: VIN, volts: 12, min: 7.5, max: 20}
+  vout: {net: V5, volts: 5}
+parts:
+  U1: {part: reg_lm7805}
+  C1: {part: cap_film}
+  C2: {part: cap_film}
+nets:
+  vin: [U1.IN, C1.1]
+  vout: [U1.OUT, C2.1]
+  gnd: [U1.GND, C1.2, C2.2]
+solver: reg_7805
+checks:
+  - {name: vout_v, label: Output voltage, symbol: "Vout", kind: dc_level, out: vout, tol_pct: 4}
+verify:
+  load: {vout: 100}

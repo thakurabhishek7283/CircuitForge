@@ -26,8 +26,8 @@ pub fn read_docs(dir: &Path, ext: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Load `<root>/manifest.yaml`, `<root>/parts/*.yaml` and `<root>/symbols/*.svg` through the real
-/// source loader, which also builds the sprite sheet.
+/// Load `<root>/manifest.yaml`, `<root>/parts/*.yaml`, `<root>/symbols/*.svg` and
+/// `<root>/templates/*.yaml` through the real source loader, which also builds the sprite sheet.
 pub fn load_sources(root: &Path) -> Loaded {
     #[derive(serde::Deserialize)]
     struct Manifest {
@@ -37,10 +37,12 @@ pub fn load_sources(root: &Path) -> Loaded {
     let m: Manifest = serde_norway::from_str(&manifest).expect("manifest has a version");
     let parts = read_docs(&root.join("parts"), "yaml");
     let symbols = read_docs(&root.join("symbols"), "svg");
+    let templates = read_docs(&root.join("templates"), "yaml");
     Registry::from_sources(
         m.version,
         parts.iter().map(|(n, t)| (n.as_str(), t.as_str())),
         symbols.iter().map(|(n, t)| (n.as_str(), t.as_str())),
+        templates.iter().map(|(n, t)| (n.as_str(), t.as_str())),
     )
     .unwrap_or_else(|errs| panic!("registry failed to load:\n{errs:#?}"))
 }

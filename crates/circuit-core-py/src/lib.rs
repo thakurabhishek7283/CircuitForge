@@ -26,18 +26,22 @@ impl Registry {
         api::load_registry(bundle).map(|inner| Registry { inner }).map_err(PyValueError::new_err)
     }
 
-    /// Load YAML part sources and SVG symbol sources: `[(file_name, text), ...]` each, symbols
-    /// named `<id>.svg`. The caller reads the files; circuit-core never touches the filesystem.
+    /// Load YAML part sources, SVG symbol sources and YAML template sources:
+    /// `[(file_name, text), ...]` each, symbols named `<id>.svg`, templates `<id>.yaml`. The
+    /// caller reads the files; circuit-core never touches the filesystem.
     #[staticmethod]
+    #[pyo3(signature = (version, docs, symbols, templates=Vec::new()))]
     fn from_yaml_docs(
         version: &str,
         docs: Vec<(String, String)>,
         symbols: Vec<(String, String)>,
+        templates: Vec<(String, String)>,
     ) -> PyResult<Registry> {
         CoreRegistry::from_yaml_docs(
             version,
             docs.iter().map(|(n, t)| (n.as_str(), t.as_str())),
             symbols.iter().map(|(n, t)| (n.as_str(), t.as_str())),
+            templates.iter().map(|(n, t)| (n.as_str(), t.as_str())),
         )
         .map(|r| Registry { inner: Arc::new(r) })
         .map_err(|errs| PyValueError::new_err(errs.iter().map(|e| e.to_string()).collect::<Vec<_>>().join("\n")))
@@ -56,6 +60,16 @@ impl Registry {
     /// Ids of every part, in registry order.
     fn part_ids(&self) -> Vec<String> {
         self.inner.parts.keys().cloned().collect()
+    }
+
+    /// Ids of every block template, in registry order.
+    fn template_ids(&self) -> Vec<String> {
+        self.inner.templates.keys().cloned().collect()
+    }
+
+    /// The 5 points CI verifies a template at → `{"ok": [VerifyPoint]} | {"err": OpError}`.
+    fn verify_points(&self, template: &str) -> String {
+        api::verify_points(&self.inner, template)
     }
 }
 
@@ -127,6 +141,18 @@ impl Session {
         api::connect(&self.inner, from_pin, to)
     }
 
+    /// Solved values and spec for inserting a template block (`InsertBlock` JSON)
+    /// → `{"ok": Preview} | {"err": OpError}`.
+    fn preview_block(&self, req: &str) -> String {
+        api::preview_block(&self.inner, req)
+    }
+
+    /// Ops that insert a template block → `{"ok": Inserted} | {"err": OpError}`; apply them with
+    /// `apply_ops(json.dumps(ops), "template")`.
+    fn insert_block(&self, req: &str) -> String {
+        api::insert_block(&self.inner, req)
+    }
+
     /// The full `Circuit` JSON.
     fn snapshot(&self) -> String {
         api::snapshot(&self.inner)
@@ -154,6 +180,13 @@ fn parse_quantity(text: &str, unit: &str) -> String {
     api::parse_quantity(text, unit)
 }
 
+/// Spec check results from a netlist's `checks` and a simulation's `meas` (both JSON)
+/// → `{"ok": [CheckResult]} | {"err": OpError}`.
+#[pyfunction]
+fn evaluate_checks(checks: &str, meas: &str) -> String {
+    api::evaluate_checks(checks, meas)
+}
+
 /// circuit-core version, for client/server skew checks.
 #[pyfunction]
 fn core_version() -> &'static str {
@@ -166,6 +199,7 @@ fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Registry>()?;
     m.add_class::<Session>()?;
     m.add_function(wrap_pyfunction!(parse_quantity, m)?)?;
+    m.add_function(wrap_pyfunction!(evaluate_checks, m)?)?;
     m.add_function(wrap_pyfunction!(core_version, m)?)?;
     Ok(())
 }

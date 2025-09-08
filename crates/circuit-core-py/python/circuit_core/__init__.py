@@ -11,13 +11,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from ._native import Registry, Session, core_version, parse_quantity
+from ._native import Registry, Session, core_version, evaluate_checks, parse_quantity
 
 __all__ = [
     "Registry",
     "Session",
     "OpRejected",
     "core_version",
+    "evaluate_checks",
     "parse_quantity",
     "load_registry_dir",
     "unwrap",
@@ -43,8 +44,8 @@ def unwrap(outcome_json: str) -> Any:
 
 
 def load_registry_dir(root: str | Path) -> Registry:
-    """Load ``<root>/manifest.yaml``, ``<root>/parts/*.yaml`` and ``<root>/symbols/*.svg`` (sorted)
-    into a Registry."""
+    """Load ``<root>/manifest.yaml``, ``<root>/parts/*.yaml``, ``<root>/symbols/*.svg`` and
+    ``<root>/templates/*.yaml`` (sorted) into a Registry."""
     root = Path(root)
     version = None
     for line in (root / "manifest.yaml").read_text(encoding="utf-8").splitlines():
@@ -56,4 +57,6 @@ def load_registry_dir(root: str | Path) -> Registry:
     def read(folder: str, pattern: str) -> list[tuple[str, str]]:
         return [(p.name, p.read_text(encoding="utf-8")) for p in sorted((root / folder).glob(pattern))]
 
-    return Registry.from_yaml_docs(version, read("parts", "*.yaml"), read("symbols", "*.svg"))
+    return Registry.from_yaml_docs(
+        version, read("parts", "*.yaml"), read("symbols", "*.svg"), read("templates", "*.yaml")
+    )

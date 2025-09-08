@@ -330,6 +330,9 @@ class ErrorCode(
         | Literal["block_not_empty"]
         | Literal["analysis_invalid"]
         | Literal["forbidden"]
+        | Literal["template_not_found"]
+        | Literal["target_out_of_range"]
+        | Literal["port_invalid"]
     ]
 ):
     root: Annotated[
@@ -344,7 +347,10 @@ class ErrorCode(
         | Literal["net_conflict"]
         | Literal["block_not_empty"]
         | Literal["analysis_invalid"]
-        | Literal["forbidden"],
+        | Literal["forbidden"]
+        | Literal["template_not_found"]
+        | Literal["target_out_of_range"]
+        | Literal["port_invalid"],
         Field(
             description="Error codes returned by `apply()`. These go back to the LLM verbatim during repair and are\nshown to users as friendly text (LLD §4). Additive only within a protocol major version."
         ),
@@ -421,6 +427,24 @@ class CompileOpts(BaseModel):
 class MeasDef(BaseModel):
     name: str
     line: str
+
+
+class CheckKind(StrEnum):
+    """
+    LLD §7 spec checks. Each is a few primitive ngspice `.meas` results combined by
+    [`evaluate_checks`] (ngspice cannot measure an expression such as `vdb(out)-vdb(in)`).
+    """
+
+    ac_corner = "ac_corner"
+    ac_q = "ac_q"
+    ac_gain = "ac_gain"
+    ac_center = "ac_center"
+    ac_band_q = "ac_band_q"
+    tran_freq = "tran_freq"
+    tran_duty = "tran_duty"
+    tran_amplitude = "tran_amplitude"
+    dc_level = "dc_level"
+    tran_threshold = "tran_threshold"
 
 
 class CurrentTerm(BaseModel):
@@ -506,6 +530,65 @@ class Side(StrEnum):
     bottom = "bottom"
 
 
+class Scale(StrEnum):
+    lin = "lin"
+    log = "log"
+
+
+class RailDef(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    net: Annotated[
+        str,
+        Field(
+            description="The rail this port binds to by default (created if missing)."
+        ),
+    ]
+    volts: float
+    min: Annotated[
+        float | None,
+        Field(
+            description="The supply range the design is verified over; absent means exactly `volts`."
+        ),
+    ] = None
+    max: float | None = None
+
+
+class TemplatePart(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    part: str
+
+
+class Pass(StrEnum):
+    low = "low"
+    high = "high"
+
+
+class Edge(StrEnum):
+    rise = "rise"
+    fall = "fall"
+
+
+class TranWindow(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    stop: Annotated[float, Field(description="Run length, seconds.")]
+    step: Annotated[float, Field(description="Largest step, seconds.")]
+
+
+class Drive(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    amplitude: float
+    frequency: float
+    offset: float | None = 0.0
+
+
 class WireEnd1(BaseModel):
     """
     Where a wire ends: a pin, an existing net (a wire or a power/ground flag of it), or a supply
@@ -554,6 +637,68 @@ class WireEnd(RootModel[WireEnd1 | WireEnd2 | WireEnd3]):
             description="Where a wire ends: a pin, an existing net (a wire or a power/ground flag of it), or a supply\nrail, which is created with its kind if it does not exist yet (the editor's GND and rail tools)."
         ),
     ]
+
+
+class PortBinding1(BaseModel):
+    """
+    An existing net (for a power port: an existing rail, whose voltage the solver uses).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    net: str
+
+
+class Rail1(BaseModel):
+    net: str
+    volts: float
+
+
+class PortBinding2(BaseModel):
+    """
+    A supply rail at `volts`, created if it does not exist.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    rail: Rail1
+
+
+class PortBinding(RootModel[PortBinding1 | Literal["new"] | PortBinding2]):
+    root: PortBinding1 | Literal["new"] | PortBinding2
+
+
+class CheckResult(BaseModel):
+    """
+    One check's outcome (LLD §7: `{name, target, measured, tol_pct, pass}`), with the numbers
+    already formatted by the core so no client formats units itself.
+    """
+
+    block: str
+    name: str
+    label: str
+    symbol: str
+    unit: Unit
+    target: float
+    tol_pct: float
+    measured: float | None = None
+    pass_: Annotated[bool, Field(alias="pass")]
+    target_display: str
+    measured_display: str | None = None
+    note: Annotated[str | None, Field(description="Why there is no measurement.")] = (
+        None
+    )
+
+
+class VerifyPoint(BaseModel):
+    """
+    One verification point: target values as text (what a user would type) and rail volts.
+    """
+
+    targets: dict[str, str]
+    rails: dict[str, float]
 
 
 class Quantity(BaseModel):
@@ -893,41 +1038,31 @@ class ErcIssue(BaseModel):
     block: str | None = None
 
 
-class Netlist(BaseModel):
-    text: Annotated[
-        str, Field(description="Deterministic: parts in natural refdes order.")
-    ]
-    hash: Annotated[str, Field(description="Lowercase hex sha256 of `text`.")]
-    node_map: Annotated[
-        dict[str, str],
-        Field(
-            description='IR net id -> SPICE node name ("N_VOUT" -> "n_vout", "GND" -> "0").'
-        ),
-    ]
-    includes: Annotated[
+class SpecCheckDef(BaseModel):
+    """
+    A check as compiled into one netlist: which `.meas` results it combines.
+    """
+
+    block: str
+    name: str
+    label: str
+    symbol: str
+    kind: CheckKind
+    unit: Unit
+    target: float
+    tol_pct: float
+    meas: Annotated[
         list[str],
         Field(
-            description="Registry model files the simulator must load, relative to the registry root."
+            description="`.meas` result names, in the order the kind combines them. Empty when `missing` is set."
         ),
     ]
-    meas: Annotated[
-        list[MeasDef],
+    missing: Annotated[
+        str | None,
         Field(
-            description="Spec checks as `.meas` statements (filled once block templates define them)."
+            description='Why the check could not be compiled into this netlist ("needs an AC analysis").'
         ),
-    ]
-    pin_currents: Annotated[
-        dict[str, list[CurrentTerm]],
-        Field(
-            description='Current into each connected pin (`"R1.1"`), as a sum of saved vectors, for the overlays\nand current probes. OP and transient plots only: device currents do not exist in AC.\nPins inside subcircuit models (op-amps, regulators) are absent; a net with one such pin\ngets its current by KCL.'
-        ),
-    ]
-    analyses: Annotated[
-        list[Analysis],
-        Field(
-            description="The analyses in the deck, in order (resolved from `CompileOpts`)."
-        ),
-    ]
+    ] = None
 
 
 class PinDef(BaseModel):
@@ -950,6 +1085,144 @@ class Anchor(BaseModel):
         Side,
         Field(
             description="The edge the anchor sits on; wires leave the symbol in this direction."
+        ),
+    ]
+
+
+class TargetDef(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    label: str
+    unit: Unit
+    min: Annotated[
+        float, Field(description="In SI units; YAML may write `10`, `50k` or `1meg`.")
+    ]
+    max: float
+    default: Annotated[str, Field(description="As the user would type it.")]
+    scale: Annotated[
+        Scale | None,
+        Field(
+            description="How verification spreads its points (frequencies and gains are `log`)."
+        ),
+    ] = "lin"
+
+
+class CheckDef(BaseModel):
+    """
+    One spec check: what to measure (a closed set of kinds, so a template can never inject SPICE)
+    on which ports. Its target is the block's `spec[name]`.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    name: str
+    label: str
+    symbol: Annotated[
+        str,
+        Field(
+            description="A few characters for badges on the drawing: `fc`, `Q`, `Vth+`."
+        ),
+    ]
+    kind: CheckKind
+    out: Annotated[str, Field(description="Output port measured.")]
+    in_: Annotated[
+        str | None,
+        Field(alias="in", description="Input port (gain reference, threshold input)."),
+    ] = None
+    pass_: Annotated[
+        Pass | None,
+        Field(
+            alias="pass",
+            description="Which side of a corner is the pass band (corner and Q checks).",
+        ),
+    ] = None
+    edge: Annotated[
+        Edge | None,
+        Field(
+            description="Output edge whose input level is the threshold (threshold checks)."
+        ),
+    ] = None
+    at_hz: Annotated[
+        float | None,
+        Field(description="Frequency a gain is measured at; default 1 kHz."),
+    ] = None
+    tran: Annotated[
+        TranWindow | None,
+        Field(
+            description="The transient a time-domain check needs. Regenerative circuits (a Schmitt trigger) switch\nlate in simulation unless the steps are near the op-amp's own speed: with coarse steps the\nintegrator follows the unstable balance point until it hits a rail."
+        ),
+    ] = None
+    tol_pct: float
+
+
+class VerifyBench(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    drive: Annotated[
+        dict[str, Drive] | None,
+        Field(
+            description="A sine source from each listed port to ground.",
+            validate_default=True,
+        ),
+    ] = {}
+    load: Annotated[
+        dict[str, float] | None,
+        Field(description="A resistor from each listed port to ground, in ohms."),
+    ] = {}
+
+
+class InsertBlock(BaseModel):
+    """
+    Insert a block from a template (the editor's "insert block", the generator's fallback).
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    template: str
+    targets: Annotated[
+        dict[str, str] | None,
+        Field(
+            description='Target values as typed ("1k", "0.707"); a missing target takes the template default.'
+        ),
+    ] = {}
+    ports: Annotated[
+        dict[str, PortBinding] | None,
+        Field(
+            description="How each port is wired; a missing port takes its default (signals: a new net; power: the\ntemplate's rail; ground: GND).",
+            validate_default=True,
+        ),
+    ] = {}
+    id: Annotated[
+        str | None, Field(description="Block id; default the lowest free `bN`.")
+    ] = None
+
+
+class Preview(BaseModel):
+    """
+    What inserting would produce, before anything is applied: the insert form shows it.
+    """
+
+    template: str
+    targets: dict[str, Quantity]
+    rails: Annotated[
+        dict[str, float], Field(description="Supply volts per power port.")
+    ]
+    values: Annotated[
+        dict[str, dict[str, Quantity]],
+        Field(description="Solved part values by the template's local refdes."),
+    ]
+    spec: Annotated[
+        dict[str, SpecTarget],
+        Field(description="The block's spec: every check's target and tolerance."),
+    ]
+    spec_display: Annotated[
+        dict[str, str],
+        Field(
+            description="Each spec target formatted for reading (`1kHz`, `0.707`, `2.5V`)."
         ),
     ]
 
@@ -1171,6 +1444,49 @@ class PatchData(BaseModel):
     ] = None
 
 
+class Netlist(BaseModel):
+    text: Annotated[
+        str, Field(description="Deterministic: parts in natural refdes order.")
+    ]
+    hash: Annotated[str, Field(description="Lowercase hex sha256 of `text`.")]
+    node_map: Annotated[
+        dict[str, str],
+        Field(
+            description='IR net id -> SPICE node name ("N_VOUT" -> "n_vout", "GND" -> "0").'
+        ),
+    ]
+    includes: Annotated[
+        list[str],
+        Field(
+            description="Registry model files the simulator must load, relative to the registry root."
+        ),
+    ]
+    meas: Annotated[
+        list[MeasDef],
+        Field(
+            description="Spec checks as primitive `.meas` statements, in replay order (later cards may use earlier\nresults)."
+        ),
+    ]
+    checks: Annotated[
+        list[SpecCheckDef],
+        Field(
+            description="The spec checks of every template block, and which `meas` results each combines\n([`crate::template::evaluate_checks`])."
+        ),
+    ]
+    pin_currents: Annotated[
+        dict[str, list[CurrentTerm]],
+        Field(
+            description='Current into each connected pin (`"R1.1"`), as a sum of saved vectors, for the overlays\nand current probes. OP and transient plots only: device currents do not exist in AC.\nPins inside subcircuit models (op-amps, regulators) are absent; a net with one such pin\ngets its current by KCL.'
+        ),
+    ]
+    analyses: Annotated[
+        list[Analysis],
+        Field(
+            description="The analyses in the deck, in order (resolved from `CompileOpts`)."
+        ),
+    ]
+
+
 class PartDef(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -1233,6 +1549,67 @@ class SymbolDef(BaseModel):
     ]
 
 
+class TemplateDef(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    id: str
+    version: Annotated[int, Field(ge=0)]
+    role: BlockRole
+    title: str
+    teach: str | None = None
+    targets: Annotated[
+        dict[str, TargetDef] | None,
+        Field(
+            description="What the user asks for, in order (the insert form shows them in this order).",
+            validate_default=True,
+        ),
+    ] = {}
+    ports: Annotated[
+        dict[str, PortDirection],
+        Field(description="The block's interface: port name -> direction."),
+    ]
+    rails: Annotated[
+        dict[str, RailDef] | None,
+        Field(
+            description="The supply each power port expects: default rail and the range the design works over.",
+            validate_default=True,
+        ),
+    ] = {}
+    parts: Annotated[
+        dict[str, TemplatePart],
+        Field(
+            description="Local refdes (R1, C1, U1, ...) -> registry part. Renumbered on instantiation."
+        ),
+    ]
+    nets: Annotated[
+        dict[str, list[PinRef]],
+        Field(
+            description="Port or internal net name -> pins (`R1.2`, `U1.OUT_A`). Every port has one."
+        ),
+    ]
+    solver: Annotated[str, Field(description="A solver in [`solvers`], by name.")]
+    checks: list[CheckDef]
+    verify: Annotated[
+        VerifyBench | None,
+        Field(
+            description="The test bench CI simulates the template in (LLD §12 step 2)."
+        ),
+    ] = None
+
+
+class Inserted(BaseModel):
+    block: str
+    ops: Annotated[
+        list[Op],
+        Field(description="Apply as one batch (author `template`): one undo step."),
+    ]
+    refdes: Annotated[
+        dict[str, str], Field(description="Local refdes -> refdes in the circuit.")
+    ]
+    preview: Preview
+
+
 class Circuit(BaseModel):
     schema_version: Annotated[int, Field(ge=0, le=65535)]
     registry_version: str
@@ -1275,3 +1652,10 @@ class Registry(BaseModel):
             description="Schematic symbols by id (`symbols/<id>.svg`): geometry only; the drawings ship in the\nbundle's sprite sheet."
         ),
     ]
+    templates: Annotated[
+        dict[str, TemplateDef] | None,
+        Field(
+            description="Block templates by id (`templates/<id>.yaml`), each checked against the parts at load.",
+            validate_default=True,
+        ),
+    ] = {}

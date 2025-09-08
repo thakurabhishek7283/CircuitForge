@@ -8,9 +8,10 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::erc::floating_nets;
+use crate::erc::{floating_nets, implicit_supplies};
 use crate::ir::*;
 use crate::registry::{Category, PartDef, Registry};
+use crate::template::checks::{SpecCheckDef, emit as emit_checks};
 use crate::units::{Unit, spice_number};
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
@@ -23,8 +24,12 @@ pub struct Netlist {
     pub node_map: BTreeMap<NetId, String>,
     /// Registry model files the simulator must load, relative to the registry root.
     pub includes: Vec<String>,
-    /// Spec checks as `.meas` statements (filled once block templates define them).
+    /// Spec checks as primitive `.meas` statements, in replay order (later cards may use earlier
+    /// results).
     pub meas: Vec<MeasDef>,
+    /// The spec checks of every template block, and which `meas` results each combines
+    /// ([`crate::template::evaluate_checks`]).
+    pub checks: Vec<SpecCheckDef>,
     /// Current into each connected pin (`"R1.1"`), as a sum of saved vectors, for the overlays
     /// and current probes. OP and transient plots only: device currents do not exist in AC.
     /// Pins inside subcircuit models (op-amps, regulators) are absent; a net with one such pin
@@ -138,6 +143,12 @@ pub fn compile(c: &Circuit, reg: &Registry, opts: &CompileOpts) -> Result<Netlis
         }
     }
 
+    // A rail nothing drives is an ideal supply at its declared volts (the rail flag is the source).
+    for (net, volts) in implicit_supplies(c, reg) {
+        let n = node_name(&net);
+        elements.push(format!("Vrail_{n} {n} 0 DC {}", spice_number(volts)));
+    }
+
     if opts.shunt_floating {
         let mut shunted: BTreeSet<String> = floating_nets(c, reg).iter().map(|n| node_name(n)).collect();
         shunted.extend(nc_nodes);
@@ -184,10 +195,15 @@ pub fn compile(c: &Circuit, reg: &Registry, opts: &CompileOpts) -> Result<Netlis
         text.push_str(a);
         text.push('\n');
     }
+    let (meas, checks) = emit_checks(c, reg, &analyses);
+    for m in &meas {
+        text.push_str(&m.line);
+        text.push('\n');
+    }
     text.push_str(".end\n");
 
     let hash = Sha256::digest(text.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
-    Ok(Netlist { text, hash, node_map, includes, meas: Vec::new(), pin_currents, analyses })
+    Ok(Netlist { text, hash, node_map, includes, meas, checks, pin_currents, analyses })
 }
 
 /// Pin currents of a primitive device, from SPICE's fixed terminal order (`R n+ n-`,

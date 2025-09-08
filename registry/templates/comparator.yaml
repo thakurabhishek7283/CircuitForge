@@ -1,0 +1,26 @@
+id: comparator
+version: 1
+role: comparator
+title: Comparator with a set threshold
+teach: "The op-amp without feedback: the output jumps high when the input rises past the divider's voltage, and low when it falls back."
+targets:
+  vth_v: {label: Threshold, unit: volt, min: 0.5, max: 3, default: "2.5"}
+ports: {in: input, out: output, vcc: power_pos, gnd: ground}
+rails:
+  vcc: {net: VCC, volts: 9, min: 5, max: 15}
+parts:
+  R1: {part: resistor_th}
+  R2: {part: resistor_th}
+  U1: {part: opamp_lm358}
+nets:
+  in: [U1.INP_A]
+  n_ref: [R1.2, R2.1, U1.INM_A]
+  out: [U1.OUT_A]
+  vcc: [R1.1, U1.VCC]
+  gnd: [R2.2, U1.VEE]
+solver: comparator
+checks:
+  - {name: vth_v, label: Threshold, symbol: "Vth", kind: tran_threshold, in: in, out: out, edge: rise, tol_pct: 5}
+verify:
+  drive: {in: {amplitude: 2.4, offset: 2.5, frequency: 50}}
+  load: {out: 10k}

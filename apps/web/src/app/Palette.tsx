@@ -1,9 +1,11 @@
-// Tools and parts (LLD §10: "the place tool lists registry parts"). Placing adds the part with
-// the next free refdes; the layout positions it, and a drag pins it where the user wants it.
+// Tools, verified blocks and parts (LLD §10: "the place tool lists registry parts"; §12: blocks
+// come from templates). Placing adds the part with the next free refdes; the layout positions it,
+// and a drag pins it where the user wants it. A block opens its insert form in the inspector.
 import { useMemo, useState } from "react";
-import type { Category, Quantity } from "../gen/contract.ts";
+import type { Category, Quantity, TemplateDef } from "../gen/contract.ts";
 import type { Tool } from "../store/uiStore.ts";
 import { useCircuit, useEditor, useUi } from "./editorContext.ts";
+import { ROLE_ORDER, roleTitle } from "./InsertBlock.tsx";
 
 const CATEGORY_TITLES: Record<Category, string> = {
   V: "Sources",
@@ -42,6 +44,8 @@ export function Palette() {
       <h3>Supply</h3>
       <div className="tools">{toolButton({ kind: "rail", net: "GND", netKind: { kind: "ground" } }, "Ground", "Click pins to connect them to ground (G)")}</div>
       <RailForm disabled={readOnly} />
+      <Blocks disabled={readOnly} />
+      <h2 className="group">Parts</h2>
       {CATEGORY_ORDER.map((cat) => {
         const list = parts.filter((p) => p.category === cat);
         if (!list.length) return null;
@@ -61,6 +65,44 @@ export function Palette() {
         );
       })}
     </nav>
+  );
+}
+
+/** Verified block templates by role; one opens its insert form. */
+function Blocks({ disabled }: { disabled: boolean }) {
+  const { registry, ui } = useEditor();
+  const inserting = useUi((s) => s.inserting);
+  const templates = Object.values(registry.templates ?? {}).filter((t): t is TemplateDef => t !== undefined);
+  if (!templates.length) return null;
+  return (
+    <>
+      <h2 className="group">Blocks</h2>
+      {ROLE_ORDER.map((role) => {
+        const list = templates.filter((t) => t.role === role);
+        if (!list.length) return null;
+        return (
+          <section key={role}>
+            <h3>{roleTitle(role)}</h3>
+            <ul>
+              {list.map((t) => (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    data-template={t.id}
+                    aria-pressed={inserting === t.id}
+                    disabled={disabled}
+                    title={t.teach ?? t.title}
+                    onClick={() => ui.getState().setInserting(t.id)}
+                  >
+                    {t.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        );
+      })}
+    </>
   );
 }
 

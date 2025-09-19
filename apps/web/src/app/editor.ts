@@ -1,6 +1,6 @@
 // Everything one open circuit needs: the WASM core session, the store mirroring it, and the
 // layout and simulation workers kept in step with it.
-import init, { CoreRegistry, CoreSession, parseQuantity } from "@tutor/core";
+import init, { CoreRegistry, CoreSession, evaluateChecks, parseQuantity } from "@tutor/core";
 import { registryAssetUrl, registryBundleUrl } from "../config.ts";
 import type { Circuit, Registry } from "../gen/contract.ts";
 import { type CircuitStore, createCircuitStore } from "../store/circuitStore.ts";
@@ -51,7 +51,7 @@ export async function openEditor(snapshotJson: string): Promise<Editor> {
 
   const layout = new LayoutClient(layoutRegistry(registry));
   const sim = new SimClient(version); // ngspice.wasm loads on the first run, after first paint
-  const stops = [attachLayout(store, (input) => layout.request(input)), attachSimulation(store, session, sim)];
+  const stops = [attachLayout(store, (input) => layout.request(input)), attachSimulation(store, session, sim, { evaluateChecks })];
 
   return {
     store,

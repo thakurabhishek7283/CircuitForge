@@ -167,4 +167,25 @@ describe.skipIf(missing.length > 0 || !existsSync(ngspiceJs))("simulation on ngs
     expect(v.N_IN).toBeCloseTo(1, 6);
     expect(v.N_OUT).toBeCloseTo(1, 2); // unity-gain low-pass passes DC
   });
+
+  it("evaluates the demo block's spec checks from the run's .meas results", async () => {
+    const core = loadCore();
+    const { store, session } = setup();
+    const { default: createNgspice } = (await import(ngspiceJs)) as { default: () => Promise<NgspiceModule> };
+    const ng = new Ngspice(await createNgspice());
+    loadModels(ng, "/registry", { "models/tl072.lib": readFileSync(join(repo, "registry/models/tl072.lib"), "utf8") });
+    attachSimulation(store, session, { run: async (req) => simulate(ng, req) }, { debounceMs: 0, evaluateChecks: core.evaluateChecks });
+    await vi.waitFor(() => expect(store.getState().sim.status).toBe("ok"), { timeout: 5000 });
+    const checks = store.getState().sim.checks!;
+    expect(checks.map((c) => [c.block, c.name, c.pass])).toEqual([
+      ["b3", "fc_hz", true],
+      ["b3", "q", true],
+    ]);
+    expect(checks[0]!.measured).toBeGreaterThan(900);
+    expect(checks[0]!.measured).toBeLessThan(1000);
+
+    // C2 from 12n to 1n moves the corner far out of tolerance.
+    store.getState().apply({ op: "part.set_param", body: { refdes: "C2", key: "capacitance", value: "1n" } });
+    await vi.waitFor(() => expect(store.getState().sim.checks?.[0]?.pass).toBe(false), { timeout: 5000 });
+  });
 });

@@ -3,9 +3,10 @@
 // netlist unchanged (a layout hint, an undo back to the simulated state) runs nothing.
 //
 // What runs is the core's interactive set (CompileOpts.interactive): OP, a short transient (or
-// the circuit's own), and any AC or DC sweep the circuit asked for with analysis.set.
-import type { Analysis, CompileError, Netlist } from "../gen/contract.ts";
-import { type CoreSessionLike, outcome } from "../core/types.ts";
+// the circuit's own), and any AC or DC sweep the circuit asked for with analysis.set. Template
+// blocks' spec checks ride along as `.meas` cards; the core turns their results into checks.
+import type { Analysis, CheckResult, CompileError, Netlist } from "../gen/contract.ts";
+import { type CoreSessionLike, expectOk, outcome } from "../core/types.ts";
 import type { SimRequest, SimResult } from "../workers/sim.types.ts";
 import type { CircuitStore } from "./circuitStore.ts";
 import { buildSimView } from "./simView.ts";
@@ -20,6 +21,8 @@ export interface SimulationOptions {
   debounceMs?: number;
   /** Override the interactive set (tests). */
   analyses?: Analysis[];
+  /** The core's `evaluateChecks`; without it spec checks are not evaluated. */
+  evaluateChecks?: (checks: string, meas: string) => string;
 }
 
 /** Keep `store.sim` in step with the circuit. Returns a function that stops it. */
@@ -37,13 +40,13 @@ export function attachSimulation(
   const run = () => {
     const state = store.getState();
     if (Object.keys(state.parts).length === 0) {
-      setSim((s) => Object.assign(s, { hash: null, status: "idle", result: undefined, view: undefined, voltages: {}, message: undefined }));
+      setSim((s) => Object.assign(s, { hash: null, status: "idle", result: undefined, view: undefined, voltages: {}, checks: undefined, message: undefined }));
       return;
     }
     const compiled = outcome<Netlist, CompileError>(core.compile(compileOpts));
     if (compiled.err) {
       const message = compiled.err.refdes ? `${compiled.err.refdes}: ${compiled.err.message}` : compiled.err.message;
-      setSim((s) => Object.assign(s, { hash: null, status: "error", result: undefined, view: undefined, voltages: {}, message }));
+      setSim((s) => Object.assign(s, { hash: null, status: "error", result: undefined, view: undefined, voltages: {}, checks: undefined, message }));
       return;
     }
     const n = compiled.ok;
@@ -60,7 +63,10 @@ export function attachSimulation(
         if (store.getState().sim.hash !== result.hash) return; // superseded by a newer edit
         const view = buildSimView(result, n, nets);
         const voltages = view.op?.v ?? {};
-        setSim((s) => Object.assign(s, { status: result.status, result, view, voltages }));
+        const checks = opts.evaluateChecks
+          ? expectOk<CheckResult[]>(opts.evaluateChecks(JSON.stringify(n.checks), JSON.stringify(result.meas)), "evaluateChecks")
+          : undefined;
+        setSim((s) => Object.assign(s, { status: result.status, result, view, voltages, checks }));
       },
       (e: unknown) => {
         if (store.getState().sim.hash !== n.hash) return;

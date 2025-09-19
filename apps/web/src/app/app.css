@@ -275,6 +275,13 @@ input[aria-invalid="true"] {
   background: var(--bg);
 }
 
+.palette h2.group {
+  margin: 16px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+
 .palette .tools {
   display: flex;
   flex-wrap: wrap;
@@ -466,6 +473,22 @@ input[aria-invalid="true"] {
   stroke: var(--accent);
 }
 
+.block .badge {
+  font: 600 10px var(--mono);
+}
+
+.block .badge.pass {
+  fill: var(--ok);
+}
+
+.block .badge.fail {
+  fill: var(--bad);
+}
+
+.block .badge.unknown {
+  fill: var(--muted);
+}
+
 .volt {
   font: 600 9px var(--mono);
   fill: var(--volt-text);
@@ -572,6 +595,80 @@ input[aria-invalid="true"] {
 .inspector .field .parsed.bad {
   color: var(--bad);
   font-family: var(--font);
+}
+
+.inspector .start p {
+  margin: 8px 0 0;
+}
+
+.inspector table.checks td:first-child {
+  font-family: var(--font);
+}
+
+.inspector .check {
+  text-align: center;
+  font-weight: 700;
+}
+
+.inspector .check.pass {
+  color: var(--ok);
+}
+
+.inspector .check.fail {
+  color: var(--bad);
+}
+
+.inspector .check.unknown,
+.inspector .notes {
+  color: var(--muted);
+}
+
+.inspector .notes {
+  margin: 6px 0 0;
+  padding-left: 16px;
+  font-size: 12px;
+}
+
+.insert-block .field.port select {
+  min-width: 0;
+}
+
+.insert-block .fixed {
+  font-family: var(--mono);
+}
+
+.insert-block .new-rail {
+  grid-column: 2;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 2px;
+}
+
+.insert-block .new-rail input {
+  width: 0;
+  flex: 1;
+}
+
+.insert-block .values {
+  font: 12px var(--mono);
+  margin: 0;
+}
+
+.insert-block .spec {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.insert-block .problem {
+  color: var(--bad);
+  margin-top: 12px;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
 }
 
 .row-actions {

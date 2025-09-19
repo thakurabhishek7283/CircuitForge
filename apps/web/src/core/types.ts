@@ -18,12 +18,18 @@ export interface CoreSessionLike {
   nextRefdes(part: string): string;
   /** Ops for a wire from a pin to a `WireEnd`; apply them as one batch. */
   connect(from: string, to: string): string;
+  /** Solved values and spec for an `InsertBlock` request: `Preview`. */
+  previewBlock(req: string): string;
+  /** Ops inserting a template block: `Inserted`; apply them as one batch, author "template". */
+  insertBlock(req: string): string;
 }
 
 export interface CoreModule {
   CoreRegistry: { fromJson(bundle: string): CoreRegistryLike };
   CoreSession: new (registry: CoreRegistryLike, snapshot?: string | null) => CoreSessionLike;
   parseQuantity(text: string, unit: string): string;
+  /** `Netlist.checks` + a result's `meas` → `CheckResult[]`. */
+  evaluateChecks(checks: string, meas: string): string;
 }
 
 export type Outcome<T, E> = { ok: T; err?: undefined } | { ok?: undefined; err: E };

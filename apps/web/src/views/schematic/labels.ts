@@ -21,12 +21,13 @@ export function partName(refdes: string, unit: string | null): string {
   return unit ? refdes + unit : refdes;
 }
 
-/** Three significant figures, mV below 1 V. */
+/** Three significant figures, mV below 1 V. Rounded first, so 0.99999 V reads "1 V". */
 export function formatVolts(v: number): string {
   const sig3 = (x: number) => x.toPrecision(3).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
-  const a = Math.abs(v);
+  const r = Number(v.toPrecision(3));
+  const a = Math.abs(r);
   if (a < 5e-4) return "0 V";
-  return a < 1 ? `${sig3(v * 1e3)} mV` : `${sig3(v)} V`;
+  return a < 1 ? `${sig3(r * 1e3)} mV` : `${sig3(r)} V`;
 }
 
 const PREFIXES: [number, string][] = [

@@ -19,7 +19,10 @@ export interface UiState {
   probes: Probe[];
   overlays: { voltage: boolean; current: boolean };
   scope: { open: boolean; tab: ScopeTab };
+  /** The block template whose insert form is open (it replaces the inspector). */
+  inserting: string | null;
   setTool(tool: Tool): void;
+  setInserting(template: string | null): void;
   addProbe(p: Probe): void;
   removeProbe(p: Probe): void;
   toggleOverlay(which: "voltage" | "current"): void;
@@ -40,7 +43,9 @@ export function createUiStore(): UiStore {
     probes: [],
     overlays: { voltage: true, current: true },
     scope: { open: true, tab: "tran" },
+    inserting: null,
     setTool: (tool) => set({ tool }),
+    setInserting: (inserting) => set({ inserting }),
     addProbe: (p) =>
       set((s) => (s.probes.some((q) => sameProbe(p, q)) ? s : { probes: [...s.probes, p].slice(-MAX_PROBES) })),
     removeProbe: (p) => set((s) => ({ probes: s.probes.filter((q) => !sameProbe(p, q)) })),

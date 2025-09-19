@@ -8,6 +8,7 @@ import type {
   Analysis,
   ApplyOk,
   Block,
+  CheckResult,
   Circuit,
   ErcIssue,
   LayoutHint,
@@ -43,6 +44,8 @@ export interface SimState {
   view?: SimView;
   /** OP node voltages by net id. */
   voltages: Record<string, number>;
+  /** Spec checks of template blocks against the latest result (LLD §7), in block order. */
+  checks?: CheckResult[];
   /** Compile error or worker failure. */
   message?: string;
 }
@@ -73,8 +76,9 @@ export interface CircuitState extends CircuitData {
 
   /** Apply one user op as one undo step. */
   apply(op: Op, label?: string): Outcome<ApplyOk, OpError>;
-  /** Apply several user ops atomically, as one undo step (e.g. place a part and wire it). */
-  applyBatch(ops: Op[], label: string): Outcome<ApplyOk, OpError>;
+  /** Apply several ops atomically, as one undo step (e.g. place a part and wire it). `author`
+   * is "template" for an inserted block, so its parts carry their template as origin. */
+  applyBatch(ops: Op[], label: string, author?: "user" | "template"): Outcome<ApplyOk, OpError>;
   undo(): boolean;
   redo(): boolean;
   /** Report an edit the core refused before anything was applied (e.g. an impossible wire). */
@@ -180,9 +184,9 @@ export function createCircuitStore(core: CoreSessionLike): CircuitStore {
           return commit(outcome<ApplyOk, OpError>(core.apply(JSON.stringify(env))), label);
         },
 
-        applyBatch(ops, label) {
+        applyBatch(ops, label, author = "user") {
           if (get().mode === "generating") return refuse(READ_ONLY);
-          return commit(outcome<ApplyOk, OpError>(core.applyOps(JSON.stringify(ops), "user")), label);
+          return commit(outcome<ApplyOk, OpError>(core.applyOps(JSON.stringify(ops), author)), label);
         },
 
         refuse,

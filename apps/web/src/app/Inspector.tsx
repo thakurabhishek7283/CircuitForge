@@ -2,26 +2,53 @@
 // by the core: "4k7" and "4.7k" are the same), probes, rotate, auto-place, disconnect, delete.
 // With nothing selected it lists the ERC findings.
 import { useState } from "react";
-import type { ErcIssue, ParamDef, Quantity } from "../gen/contract.ts";
+import type { CheckResult, ErcIssue, ParamDef, Quantity } from "../gen/contract.ts";
 import type { Selection } from "../store/circuitStore.ts";
 import { formatSi, formatVolts } from "../views/schematic/labels.ts";
 import { rotatePart } from "./commands.ts";
 import { useCircuit, useEditor, useUi } from "./editorContext.ts";
+import { InsertBlockPanel } from "./InsertBlock.tsx";
 
 export function Inspector() {
   const selection = useCircuit((s) => s.selection);
+  const inserting = useUi((s) => s.inserting);
   return (
     <aside className="inspector">
-      {!selection ? <Overview /> : selection.kind === "part" ? <PartPanel refdes={selection.refdes} /> : selection.kind === "net" ? <NetPanel id={selection.id} /> : <BlockPanel id={selection.id} />}
+      {inserting ? (
+        <InsertBlockPanel key={inserting} templateId={inserting} />
+      ) : !selection ? (
+        <Overview />
+      ) : selection.kind === "part" ? (
+        <PartPanel refdes={selection.refdes} />
+      ) : selection.kind === "net" ? (
+        <NetPanel id={selection.id} />
+      ) : (
+        <BlockPanel id={selection.id} />
+      )}
     </aside>
   );
 }
 
 function Overview() {
   const erc = useCircuit((s) => s.erc);
+  const empty = useCircuit((s) => Object.keys(s.parts).length === 0);
   return (
     <>
-      <p className="hint">Select a part, a wire or a block title. Drag to pan, scroll to zoom; drag a part to place it yourself.</p>
+      {empty ? (
+        <div className="start">
+          <h2>Start a circuit</h2>
+          <p>
+            Pick a <strong>block</strong> on the left (a filter, an amplifier…): say what you want, such as a 1 kHz cutoff, and its
+            parts are chosen and checked for you.
+          </p>
+          <p>
+            Or place <strong>parts</strong> one by one and join their pins with the <strong>Wire</strong> tool (W). A rail like VCC +12 V
+            is a supply: pins on it are powered.
+          </p>
+        </div>
+      ) : (
+        <p className="hint">Select a part, a wire or a block title. Drag to pan, scroll to zoom; drag a part to place it yourself.</p>
+      )}
       <ErcList issues={erc} />
     </>
   );
@@ -198,15 +225,51 @@ function NetPanel({ id }: { id: string }) {
 }
 
 function BlockPanel({ id }: { id: string }) {
+  const { registry } = useEditor();
   const block = useCircuit((s) => s.blocks[id]);
   const voltages = useCircuit((s) => s.sim.voltages);
+  const checks = useCircuit((s) => s.sim.checks);
+  const status = useCircuit((s) => s.sim.status);
   if (!block) return null;
+  const template = block.template ? registry.templates?.[block.template] : undefined;
+  const mine = (checks ?? []).filter((c) => c.block === id);
   return (
     <>
       <h2>{block.title}</h2>
       <p className="sub">
-        {block.role} · {block.status}
+        {block.role} · {template ? "verified template" : block.status}
       </p>
+      {mine.length > 0 && (
+        <>
+          <h3>Spec checks</h3>
+          <table className="checks" aria-label="Spec checks">
+            <tbody>
+              {mine.map((c) => (
+                <tr key={c.name} data-check={c.name} data-pass={c.pass}>
+                  <td>{c.label}</td>
+                  <td className="num">
+                    {c.target_display} ±{c.tol_pct}%
+                  </td>
+                  <td className="num">{c.measured_display ?? "—"}</td>
+                  <td className={checkClass(c)}>{c.pass ? "✓" : c.measured_display ? "✗" : "?"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {mine.some((c) => c.note) && (
+            <ul className="notes">
+              {mine.filter((c) => c.note).map((c) => (
+                <li key={c.name}>
+                  {c.label}: {c.note}
+                </li>
+              ))}
+            </ul>
+          )}
+          {mine.some((c) => !c.pass && c.measured_display) && status === "ok" && (
+            <p className="hint">A check fails when the measured value is outside its tolerance: changed parts, or a heavy load, move it.</p>
+          )}
+        </>
+      )}
       <h3>Ports</h3>
       <table>
         <tbody>
@@ -219,6 +282,9 @@ function BlockPanel({ id }: { id: string }) {
           ))}
         </tbody>
       </table>
+      {template?.teach && <p className="teach">{template.teach}</p>}
     </>
   );
 }
+
+export const checkClass = (c: CheckResult) => (c.pass ? "check pass" : c.measured_display ? "check fail" : "check unknown");

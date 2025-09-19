@@ -12,6 +12,9 @@ describe("labels", () => {
     expect(formatVolts(0.1)).toBe("100 mV");
     expect(formatVolts(-0.0123)).toBe("-12.3 mV");
     expect(formatVolts(1e-6)).toBe("0 V");
+    expect(formatVolts(0.99999)).toBe("1 V");
+    expect(formatVolts(-0.9996)).toBe("-1 V");
+    expect(formatVolts(0.9994)).toBe("999 mV");
   });
 
   it("shows non-zero params, or the type number", () => {

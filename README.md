@@ -11,10 +11,10 @@ Spec: [docs/LLD.md](docs/LLD.md).
 | `crates/circuit-core-py` | PyO3 facade → Python package `circuit_core` |
 | `contract/schema` | JSON Schemas exported from the Rust types (generated, committed) |
 | `apps/web/src/gen`, `apps/api/tutor_api/models` | TS types / Pydantic models generated from the schemas (do not edit) |
-| `registry` | Parts (YAML), schematic symbols (SVG), SPICE models, bundle manifest |
+| `registry` | Parts (YAML), schematic symbols (SVG), SPICE models, block templates (YAML), bundle manifest |
 | `third_party/ngspice` | The pinned ngspice: native and WASM build scripts, patches, licence notes |
 | `apps/web` | Vite + React editor: store mirroring the WASM core, edit tools, ELK layout worker, SVG schematic with canvas overlays, scope, ngspice WASM sim worker |
-| `tools/sim` | Native ngspice driver; simulation tests for every part and the demo circuit; native vs WASM parity |
+| `tools/sim` | Native ngspice driver; simulation tests for every part, every block template and the demo circuit; native vs WASM parity |
 | `tools/parity` | Cross-runtime parity gate: native vs WASM vs Python |
 | `tools/codegen` | Schema → TS / Pydantic generation |
 
@@ -43,7 +43,7 @@ tools/parity/run.sh                        # builds both bindings, then checks 1
 tools/codegen/run.sh                       # schemas -> TS + Pydantic (add --check in CI)
 node crates/circuit-core-wasm/build.mjs    # browser package in crates/circuit-core-wasm/pkg
 cargo run -p circuit-core --example bundle_registry   # registry bundle (JSON, symbols.svg, model files) in target/registry
-.venv/Scripts/python -m pytest -q tools/sim           # every part simulated + demo circuit + native vs WASM parity
+.venv/Scripts/python -m pytest -q tools/sim           # every part + every template at 5 points + demo + native vs WASM parity
 (cd apps/web && npx vitest run && npx tsc --noEmit)   # store, layout, schematic, sim worker; end to end on ngspice.wasm
 (cd apps/web && npm run dev)                          # editor on the demo circuit at http://localhost:5173
 (cd apps/web && npm run build)                        # static bundle in apps/web/dist (app + ngspice + registry)
@@ -62,4 +62,7 @@ After changing a wire type: `tools/codegen/run.sh`, then commit the regenerated 
 After a deliberate netlist change: `cargo insta review` (or `INSTA_UPDATE=always cargo test`) and review the diff.
 After changing the demo circuit: `UPDATE_FIXTURES=1 cargo test -p circuit-core` (refreshes the IR snapshot the simulation tests load).
 After changing a model in `registry/models`: run `tools/sim`; every part's behaviour is checked there.
+After changing a template in `registry/templates` or a solver: rebuild the bundle, then `pytest tools/sim`; when every
+template meets its spec it writes `target/registry/registry-<version>.verified.json`, which the CI web build requires
+(`REQUIRE_VERIFIED=1`).
 After changing a symbol in `registry/symbols`: `cargo insta review` (the sprite sheet is snapshotted) and look at it in the editor.

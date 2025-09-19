@@ -1,7 +1,7 @@
 // The editor's gestures as ops (LLD §10). Each gesture is one `apply`/`applyBatch`, so one undo
 // step; the core decides refdes and how a wire joins nets (circuit-core `edit`), so the editor
 // never re-implements IR rules.
-import type { Analysis, ApplyOk, Op, OpError, Placement, WireEnd } from "../gen/contract.ts";
+import type { Analysis, ApplyOk, InsertBlock, Inserted, Op, OpError, Placement, Preview, WireEnd } from "../gen/contract.ts";
 import { type CoreSessionLike, outcome, type Outcome } from "../core/types.ts";
 import type { CircuitStore, Selection } from "./circuitStore.ts";
 
@@ -22,6 +22,10 @@ export interface Edits {
   pin(refdes: string, placement: Placement | null, label?: string): EditResult;
   /** The circuit's requested analyses (the scope's AC sweep and transient settings). */
   setAnalyses(analyses: Analysis[], label: string): EditResult;
+  /** What inserting a template block would give (part values, spec), without applying it. */
+  previewBlock(req: InsertBlock): Outcome<Preview, OpError>;
+  /** Insert a template block as one undo step and select it. */
+  insertBlock(req: InsertBlock): Outcome<Inserted, OpError>;
 }
 
 export function createEdits(store: CircuitStore, core: CoreSessionLike): Edits {
@@ -70,6 +74,24 @@ export function createEdits(store: CircuitStore, core: CoreSessionLike): Edits {
 
     setAnalyses(analyses, text) {
       return state().apply({ op: "analysis.set", body: { analyses } }, text);
+    },
+
+    previewBlock(req) {
+      return outcome<Preview, OpError>(core.previewBlock(JSON.stringify(req)));
+    },
+
+    insertBlock(req) {
+      const ins = outcome<Inserted, OpError>(core.insertBlock(JSON.stringify(req)));
+      if (ins.err) {
+        state().refuse(ins.err);
+        return ins;
+      }
+      const begin = ins.ok.ops[0];
+      const title = begin?.op === "block.begin" ? begin.body.title : req.template;
+      const r = state().applyBatch(ins.ok.ops, `Insert ${title}`, "template");
+      if (r.err) return { err: r.err };
+      state().select({ kind: "block", id: ins.ok.block });
+      return ins;
     },
   };
 }

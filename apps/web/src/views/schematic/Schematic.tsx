@@ -9,7 +9,7 @@
 import { select } from "d3-selection";
 import { type D3ZoomEvent, type ZoomBehavior, type ZoomTransform, zoom, zoomIdentity } from "d3-zoom";
 import { memo, useEffect, useMemo, useRef } from "react";
-import type { PartDef, PartInstance } from "../../gen/contract.ts";
+import type { CheckResult, PartDef, PartInstance } from "../../gen/contract.ts";
 import { useCircuit, useEditor, useUi } from "../../app/editorContext.ts";
 import type { Selection } from "../../store/circuitStore.ts";
 import type { Tool } from "../../store/uiStore.ts";
@@ -122,7 +122,21 @@ const NetWires = memo(function NetWires({ id, polylines, junctions, selected, on
   );
 });
 
-const Frame = memo(function Frame({ id, frame, selected, onSelect }: { id: string; frame: BlockFrame; selected: boolean; onSelect: (s: Selection) => void }) {
+/** A block's frame and title, followed by one badge per spec check (✓ within tolerance, ✗ out,
+ * ? not measured). The badges flow after the title as tspans, so no text is measured. */
+const Frame = memo(function Frame({
+  id,
+  frame,
+  selected,
+  checks,
+  onSelect,
+}: {
+  id: string;
+  frame: BlockFrame;
+  selected: boolean;
+  checks: CheckResult[] | undefined;
+  onSelect: (s: Selection) => void;
+}) {
   return (
     <g className={selected ? "block selected" : "block"} data-block={id}>
       <rect x={frame.x} y={frame.y} width={frame.width} height={frame.height} rx={8} />
@@ -134,11 +148,23 @@ const Frame = memo(function Frame({ id, frame, selected, onSelect }: { id: strin
           onSelect({ kind: "block", id });
         }}
       >
+        {checks && checks.length > 0 && (
+          <title>
+            {checks.map((c) => `${c.label}: ${c.measured_display ?? c.note ?? "—"} (target ${c.target_display} ±${c.tol_pct}%)`).join("\n")}
+          </title>
+        )}
         {frame.title}
+        {checks?.map((c) => (
+          <tspan key={c.name} dx={8} className={c.pass ? "badge pass" : c.measured_display ? "badge fail" : "badge unknown"} data-check={c.name}>
+            {`${c.symbol} ${c.measured_display ?? "?"} ${c.pass ? "✓" : c.measured_display ? "✗" : ""}`.trimEnd()}
+          </tspan>
+        ))}
       </text>
     </g>
   );
 });
+
+const NO_CHECKS: CheckResult[] = [];
 
 /** The drawing for one layout; split out so it renders on the server in tests. */
 export function SchematicContent({
@@ -147,6 +173,7 @@ export function SchematicContent({
   defs,
   voltages,
   selection,
+  checks = NO_CHECKS,
   onSelect,
 }: {
   layout: Layout;
@@ -154,14 +181,21 @@ export function SchematicContent({
   defs: Record<string, PartDef | undefined>;
   voltages: Record<string, number>;
   selection: Selection | null;
+  /** Spec check results of template blocks (sim.checks). */
+  checks?: CheckResult[];
   onSelect: (s: Selection) => void;
 }) {
   const named = new Set<string>();
+  const byBlock = useMemo(() => {
+    const m = new Map<string, CheckResult[]>();
+    for (const c of checks) m.set(c.block, [...(m.get(c.block) ?? []), c]);
+    return m;
+  }, [checks]);
   return (
     <>
       <g className="blocks">
         {Object.entries(layout.blocks).map(([id, f]) => (
-          <Frame key={id} id={id} frame={f} selected={selection?.kind === "block" && selection.id === id} onSelect={onSelect} />
+          <Frame key={id} id={id} frame={f} selected={selection?.kind === "block" && selection.id === id} checks={byBlock.get(id)} onSelect={onSelect} />
         ))}
       </g>
       <g className="wires">
@@ -266,6 +300,7 @@ export function Schematic() {
   const nets = useCircuit((s) => s.nets);
   const voltages = useCircuit((s) => s.sim.voltages);
   const selection = useCircuit((s) => s.selection);
+  const checks = useCircuit((s) => s.sim.checks);
   const tool = useUi((s) => s.tool);
   const rev = useCircuit((s) => s.rev);
   const layoutRev = useCircuit((s) => s.layoutRev);
@@ -427,7 +462,15 @@ export function Schematic() {
       >
         <g ref={viewRef}>
           {layout && (
-            <SchematicContent layout={layout} parts={parts} defs={registry.parts} voltages={voltages} selection={selection} onSelect={pick} />
+            <SchematicContent
+              layout={layout}
+              parts={parts}
+              defs={registry.parts}
+              voltages={voltages}
+              selection={selection}
+              checks={checks}
+              onSelect={pick}
+            />
           )}
           {layout && tool.kind !== "select" && <PinTargets pins={layout.pins} connected={connected} />}
           <line ref={bandRef} className="rubber-band" visibility="hidden" />

@@ -110,4 +110,32 @@ describe.skipIf(missing.length > 0)("edits", () => {
     store.getState().undo();
     expect(store.getState().analyses).toEqual([]);
   });
+
+  it("inserts a template block as one undo step, with its rails and analyses", () => {
+    const { session, store, edits } = setup();
+    const req = { template: "sallen_key_lp", targets: { fc_hz: "2k" } };
+    const preview = edits.previewBlock(req);
+    expect(preview.ok?.spec_display.fc_hz).toBe("2kHz");
+    expect(Object.keys(store.getState().parts)).toEqual([]); // a preview changes nothing
+
+    const ins = edits.insertBlock(req);
+    expect(ins.ok?.block).toBe("b1");
+    const s = store.getState();
+    expect(s.selection).toEqual({ kind: "block", id: "b1" });
+    expect(Object.keys(s.parts).sort()).toEqual(["C1", "C2", "R1", "R2", "U1"]);
+    expect(s.parts.U1?.origin).toEqual({ kind: "template", id: "sallen_key_lp" });
+    expect(s.nets.VCC?.kind).toEqual({ kind: "power", volts: 12 });
+    expect(s.blocks.b1?.spec.fc_hz?.target).toBe(2000);
+    expect(s.analyses.map((a) => a.type)).toEqual(["ac"]);
+    expect(s.history.undo.at(-1)?.label).toBe("Insert Sallen-Key low-pass (2nd order)");
+    expect(JSON.parse(session.snapshot())).toMatchObject({ parts: s.parts, blocks: s.blocks });
+
+    expect(edits.insertBlock({ template: "rc_lowpass", targets: { fc_hz: "1G" } }).err?.code).toBe("target_out_of_range");
+    expect(store.getState().lastError?.code).toBe("target_out_of_range");
+
+    store.getState().undo();
+    expect(store.getState().parts).toEqual({});
+    expect(store.getState().blocks).toEqual({});
+    expect(store.getState().analyses).toEqual([]);
+  });
 });

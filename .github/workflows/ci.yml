@@ -77,7 +77,8 @@ jobs:
         with:
           name: ngspice-dist
           path: third_party/ngspice/dist
-      - name: Simulation tests (every part, demo circuit, native vs WASM parity)
+      # Also verifies every block template at 5 points and stamps the bundle (verified.json).
+      - name: Simulation tests (every part, every template, demo circuit, native vs WASM parity)
         env:
           REQUIRE_NGSPICE: "1"
         run: |
@@ -86,11 +87,13 @@ jobs:
       - name: circuit-core browser build (@tutor/core for Vite)
         run: node crates/circuit-core-wasm/build.mjs
       # Store, layout, schematic and sim worker against the real core, registry bundle and
-      # ngspice.wasm; then the static bundle (app + ngspice + registry) a CDN would serve.
+      # ngspice.wasm; then the static bundle (app + ngspice + registry) a CDN would serve, which
+      # ships only a registry bundle the template verification above stamped.
       - name: Web app
         working-directory: apps/web
         env:
           REQUIRE_NGSPICE: "1"
+          REQUIRE_VERIFIED: "1"
         run: |
           npm ci
           npx tsc --noEmit

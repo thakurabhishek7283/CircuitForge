@@ -6,6 +6,8 @@ import { downsample } from "./lttb.ts";
 
 export const PROBE_COLOURS = ["#e8590c", "#1c7ed6", "#2f9e44", "#ae3ec9", "#f08c00", "#0c8599"];
 export const FOLLOW_COLOUR = "#868e96";
+/** Further followed nets (a block's output after its input). */
+const FOLLOW_COLOURS = [FOLLOW_COLOUR, "#495057", "#adb5bd"];
 
 export interface Trace {
   label: string;
@@ -23,16 +25,19 @@ export interface Plot {
 
 export const probeLabel = (p: Probe): string => (p.kind === "net" ? `V(${p.id})` : `I(${p.ref})`);
 
-/** Probes plus the followed net, each with its colour. */
-function lines(probes: Probe[], follow: string | null): { probe: Probe; colour: string; follow: boolean }[] {
+/** Probes plus the followed nets (the selected net, or a selected block's signal ports), each
+ * with its colour. */
+function lines(probes: Probe[], follow: string[]): { probe: Probe; colour: string; follow: boolean }[] {
   const out = probes.map((probe, k) => ({ probe, colour: PROBE_COLOURS[k % PROBE_COLOURS.length]!, follow: false }));
-  if (follow && !probes.some((p) => p.kind === "net" && p.id === follow)) {
-    out.push({ probe: { kind: "net", id: follow }, colour: FOLLOW_COLOUR, follow: true });
-  }
+  follow.forEach((id, k) => {
+    if (!probes.some((p) => p.kind === "net" && p.id === id)) {
+      out.push({ probe: { kind: "net", id }, colour: k === 0 ? FOLLOW_COLOUR : FOLLOW_COLOURS[k % FOLLOW_COLOURS.length]!, follow: true });
+    }
+  });
   return out;
 }
 
-export function tranPlot(view: SimView | undefined, probes: Probe[], follow: string | null): Plot | null {
+export function tranPlot(view: SimView | undefined, probes: Probe[], follow: string[]): Plot | null {
   const tran = view?.tran;
   if (!tran) return null;
   const shown = lines(probes, follow).flatMap(({ probe, colour, follow }) => {
@@ -44,7 +49,7 @@ export function tranPlot(view: SimView | undefined, probes: Probe[], follow: str
 }
 
 /** Bode plot: magnitude in dB and phase in degrees of every probed net (currents have no AC). */
-export function acPlot(view: SimView | undefined, probes: Probe[], follow: string | null): Plot | null {
+export function acPlot(view: SimView | undefined, probes: Probe[], follow: string[]): Plot | null {
   const ac = view?.ac;
   if (!ac) return null;
   const shown = lines(probes, follow).flatMap(({ probe, colour, follow }) => {

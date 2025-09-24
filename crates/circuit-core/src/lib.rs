@@ -16,6 +16,7 @@ pub mod spice;
 pub mod symbol;
 pub mod template;
 pub mod units;
+pub mod wire;
 
 pub use apply::{Applied, Patch, Trial, apply, apply_all, apply_ops, validate};
 pub use describe::circuit_text;

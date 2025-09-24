@@ -1184,6 +1184,11 @@
           "type": "string",
           "const": "port_invalid",
           "description": "A port binding names a net that cannot carry that port (wrong kind, missing, ground misuse)."
+        },
+        {
+          "type": "string",
+          "const": "compile_failed",
+          "description": "The compiler refused a circuit that `apply()` accepted (a generated block's bench)."
         }
       ],
       "description": "Error codes returned by `apply()`. These go back to the LLM verbatim during repair and are\nshown to users as friendly text (LLD §4). Additive only within a protocol major version."

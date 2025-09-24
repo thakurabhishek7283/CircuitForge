@@ -16,7 +16,7 @@ use crate::ir::{Analysis, Block, BlockId, Circuit, LayoutHint, Net, NetId, PartI
 use crate::ops::{Author, Op, OpEnvelope};
 use crate::registry::Registry;
 use crate::spice::{CompileError, CompileOpts, Netlist, compile};
-use crate::template::{self, InsertBlock, Inserted, Preview};
+use crate::template::{self, BlockRequest, BlockTrial, InsertBlock, Inserted, Preview};
 
 /// What a successful `apply` reports to the UI: only what changed (LLD §10).
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
@@ -132,6 +132,17 @@ impl Session {
     /// author `template`.
     pub fn insert_block(&self, req: &InsertBlock) -> Result<Inserted, OpError> {
         template::instantiate(&self.circuit, &self.reg, req)
+    }
+
+    /// Trial a generated block ([`template::trial_block`]): its ops, every problem, and the
+    /// bench netlist to simulate. The session is not changed.
+    pub fn trial_block(&self, req: &BlockRequest, job: Option<&str>) -> BlockTrial {
+        template::trial_block(&self.circuit, &self.reg, req, job)
+    }
+
+    /// Ops that put a template block in its verification bench ([`template::bench_ops`]).
+    pub fn bench_ops(&self, block: &str) -> Result<Vec<Op>, OpError> {
+        template::bench_ops(&self.circuit, &self.reg, block)
     }
 }
 
@@ -270,6 +281,17 @@ pub mod json_api {
     /// `req_json` is an `InsertBlock` → `Outcome<Inserted, OpError>`.
     pub fn insert_block(s: &Session, req_json: &str) -> String {
         outcome(parse::<InsertBlock>("insert block", req_json).and_then(|r| s.insert_block(&r)))
+    }
+
+    /// `req_json` is a `BlockRequest`, `job` the generation job id → `Outcome<BlockTrial, OpError>`
+    /// (err only for a malformed request; a bad block is a trial with problems).
+    pub fn trial_block(s: &Session, req_json: &str, job: Option<&str>) -> String {
+        outcome(parse::<BlockRequest>("block request", req_json).map(|r| s.trial_block(&r, job)))
+    }
+
+    /// `block` is a template block's id → `Outcome<[Op], OpError>`; apply as author `user`.
+    pub fn bench_ops(s: &Session, block: &str) -> String {
+        outcome(s.bench_ops(block))
     }
 
     /// `checks_json` is `Netlist.checks`, `meas_json` the result's `meas` (name -> value)

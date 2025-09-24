@@ -17,7 +17,11 @@ use crate::registry::Registry;
 use crate::session::json_api::Outcome;
 use crate::session::{ApplyOk, PatchData};
 use crate::spice::{CompileError, CompileOpts, Netlist};
-use crate::template::{CheckResult, InsertBlock, Inserted, Preview, VerifyPoint};
+use crate::template::{BlockRequest, BlockTrial, CheckResult, InsertBlock, Inserted, Preview, VerifyPoint};
+use crate::wire::{
+    AnonymousSession, ApiError, AppendOk, AppendOps, CreateProject, GenerateRequest, JobAccepted, JobEvent,
+    ProjectSnapshot,
+};
 
 /// `(file name, schema)` for each contract type, in a fixed order.
 pub fn all_schemas() -> Vec<(&'static str, Value)> {
@@ -68,6 +72,17 @@ pub fn contract_schema() -> Value {
     add::<Inserted>(&mut generator);
     add::<CheckResult>(&mut generator);
     add::<VerifyPoint>(&mut generator);
+    add::<BlockRequest>(&mut generator);
+    add::<BlockTrial>(&mut generator);
+    add::<JobEvent>(&mut generator);
+    add::<ApiError>(&mut generator);
+    add::<AnonymousSession>(&mut generator);
+    add::<CreateProject>(&mut generator);
+    add::<ProjectSnapshot>(&mut generator);
+    add::<AppendOps>(&mut generator);
+    add::<AppendOk>(&mut generator);
+    add::<GenerateRequest>(&mut generator);
+    add::<JobAccepted>(&mut generator);
     json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "Contract",

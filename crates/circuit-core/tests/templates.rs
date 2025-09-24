@@ -10,9 +10,9 @@ use std::sync::Arc;
 use circuit_core::erc::{ErcContext, Severity};
 use circuit_core::error::ErrorCode;
 use circuit_core::ir::{Analysis, BlockRole, NetKind, PortDirection};
-use circuit_core::ops::{Author, Op};
+use circuit_core::ops::Author;
 use circuit_core::spice::CompileOpts;
-use circuit_core::template::{InsertBlock, PortBinding, TemplateDef, verify_points};
+use circuit_core::template::{BlockRequest, InsertBlock, PortBinding, verify_points};
 use circuit_core::{Registry, Session};
 use common::*;
 use serde_json::json;
@@ -32,34 +32,9 @@ fn req(template: &str) -> InsertBlock {
 }
 
 /// The CI test bench around a template block: its `verify` sources and loads.
-fn bench(s: &mut Session, t: &TemplateDef, block: &str) {
-    let v = t.verify.clone().unwrap_or_default();
-    let port_net =
-        |s: &Session, port: &str| s.circuit().blocks[block].ports.iter().find(|p| p.name == port).unwrap().net.clone();
-    let mut ops = Vec::new();
-    for (port, d) in &v.drive {
-        let r = s.next_refdes("vsource_sine").unwrap();
-        let net = port_net(s, port);
-        ops.push(json!({"op": "part.add", "body": {"refdes": r, "part": "vsource_sine", "params": {
-            "offset": d.offset.to_string(), "amplitude": d.amplitude.to_string(), "frequency": d.frequency.to_string()}}}));
-        ops.push(json!({"op": "net.connect", "body": {"net": net, "pins": [format!("{r}.P")]}}));
-        ops.push(json!({"op": "net.connect", "body": {"net": "GND", "pins": [format!("{r}.N")], "kind": {"kind": "ground"}}}));
-        let ops_now: Vec<Op> = ops.drain(..).map(|o| serde_json::from_value(o).unwrap()).collect();
-        s.apply_ops(&ops_now, Author::User).unwrap();
-    }
-    for (port, ohms) in &v.load {
-        let r = s.next_refdes("resistor_th").unwrap();
-        let net = port_net(s, port);
-        let ops: Vec<Op> = [
-            json!({"op": "part.add", "body": {"refdes": r, "part": "resistor_th", "params": {"resistance": ohms.to_string()}}}),
-            json!({"op": "net.connect", "body": {"net": net, "pins": [format!("{r}.1")]}}),
-            json!({"op": "net.connect", "body": {"net": "GND", "pins": [format!("{r}.2")], "kind": {"kind": "ground"}}}),
-        ]
-        .into_iter()
-        .map(|o| serde_json::from_value(o).unwrap())
-        .collect();
-        s.apply_ops(&ops, Author::User).unwrap();
-    }
+fn bench(s: &mut Session, block: &str) {
+    let ops = s.bench_ops(block).unwrap();
+    s.apply_ops(&ops, Author::User).unwrap();
 }
 
 #[test]
@@ -98,9 +73,8 @@ fn every_template_instantiates_at_its_verify_points() {
                 .map(|(port, v)| (port.clone(), PortBinding::Rail { net: t.rails[port].net.clone(), volts: *v }))
                 .collect();
             let r = InsertBlock { template: t.id.clone(), targets: p.targets.clone(), ports, id: None };
-            let ins = insert(&mut s, r);
+            let ins = s.insert_block(&r).unwrap();
             assert_eq!(ins.block, "b1");
-            assert_eq!(s.circuit().blocks["b1"].template.as_deref(), Some(t.id.as_str()));
             for (port, dir) in &t.ports {
                 if *dir == PortDirection::Input {
                     assert!(
@@ -109,7 +83,12 @@ fn every_template_instantiates_at_its_verify_points() {
                     );
                 }
             }
-            bench(&mut s, t, "b1");
+            let trial = s.trial_block(&BlockRequest::Template(r.clone()), None);
+            assert!(trial.problems.is_empty(), "{what}: {:#?}", trial.problems);
+            assert_eq!(trial.author, Author::Template);
+            insert(&mut s, r);
+            assert_eq!(s.circuit().blocks["b1"].template.as_deref(), Some(t.id.as_str()));
+            bench(&mut s, "b1");
 
             let errors: Vec<_> =
                 s.erc(ErcContext::LlmBlock, None).into_iter().filter(|i| i.severity == Severity::Error).collect();
@@ -117,6 +96,12 @@ fn every_template_instantiates_at_its_verify_points() {
 
             let n = s.compile(&CompileOpts { interactive: true, ..Default::default() }).unwrap();
             assert_eq!(n.checks.len(), t.checks.len(), "{what}");
+            assert_eq!(
+                trial.bench.as_ref().map(|b| &b.hash),
+                Some(&n.hash),
+                "{what}: the generator verifies this bench"
+            );
+            assert_eq!(trial.ops, ins.ops, "{what}");
             for ch in &n.checks {
                 assert!(ch.missing.is_none(), "{what}: {} {:?}", ch.name, ch.missing);
             }

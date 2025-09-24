@@ -120,6 +120,30 @@ def test_block_templates(reg):
     assert json.loads(s.insert_block(json.dumps({"template": "x"})))["err"]["code"] == "template_not_found"
 
 
+RC_DRAFT = {"draft": {
+    "template": "rc_lowpass", "targets": {"fc_hz": "1k"},
+    "parts": [{"ref": "R1", "part": "resistor_th", "params": {"resistance": "1.6k"}},
+              {"ref": "C1", "part": "cap_film", "params": {"capacitance": "100n"}}],
+    "nets": [{"name": "in", "pins": ["R1.1"]}, {"name": "out", "pins": ["R1.2", "C1.1"]},
+             {"name": "gnd", "pins": ["C1.2"]}],
+}}
+
+
+def test_trial_block_and_bench(reg):
+    s = cc.Session(reg)
+    t = cc.unwrap(s.trial_block(json.dumps(RC_DRAFT), "j_1"))
+    assert t["problems"] == [] and t["author"] == "llm" and t["block"] == "b1"
+    assert t["bench"]["checks"][0]["name"] == "fc_hz"
+    assert s.rev == 0, "a trial changes nothing"
+    cc.unwrap(s.apply_ops(json.dumps(t["ops"]), "llm"))
+    assert len(cc.unwrap(s.bench_ops("b1"))) == 6
+    bad = json.loads(json.dumps(RC_DRAFT))
+    bad["draft"]["nets"][1]["pins"].append("C1.3")
+    t = cc.unwrap(cc.Session(reg).trial_block(json.dumps(bad)))
+    assert [(p["code"], p["at"]) for p in t["problems"]] == [("pin_not_found", "net out")]
+    assert json.loads(s.trial_block("{}"))["err"]["code"] == "schema_error"
+
+
 def test_heavy_calls_release_the_gil(reg):
     """A trial batch must not block other Python threads (the API's event loop)."""
     s = cc.Session(reg)

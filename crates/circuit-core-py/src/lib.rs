@@ -153,6 +153,20 @@ impl Session {
         api::insert_block(&self.inner, req)
     }
 
+    /// Trial a generated block (`BlockRequest` JSON) → `{"ok": BlockTrial} | {"err": OpError}`:
+    /// its ops, every problem, and the bench netlist to simulate. The session is not changed.
+    #[pyo3(signature = (req, job=None))]
+    fn trial_block(&self, py: Python<'_>, req: &str, job: Option<&str>) -> String {
+        let inner = &self.inner;
+        py.detach(|| api::trial_block(inner, req, job))
+    }
+
+    /// Ops that put template block `block` in its verification bench → `{"ok": [Op]} | {"err": OpError}`;
+    /// apply them with author `"user"`.
+    fn bench_ops(&self, block: &str) -> String {
+        api::bench_ops(&self.inner, block)
+    }
+
     /// The full `Circuit` JSON.
     fn snapshot(&self) -> String {
         api::snapshot(&self.inner)

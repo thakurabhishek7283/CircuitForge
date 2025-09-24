@@ -91,3 +91,14 @@ test("block templates: preview, insert, verify points, spec checks", () => {
   assert.equal(results[1].pass, false);
   assert.equal(JSON.parse(registry.verifyPoints("sallen_key_lp")).ok.length, 5);
 });
+
+test("a template block's verification bench", () => {
+  const s = new core.CoreSession(registry);
+  const ins = JSON.parse(s.insertBlock(JSON.stringify({ template: "rc_lowpass" }))).ok;
+  JSON.parse(s.applyOps(JSON.stringify(ins.ops), "template")).ok;
+  const bench = JSON.parse(s.benchOps("b1")).ok;
+  assert.equal(bench.length, 6);
+  JSON.parse(s.applyOps(JSON.stringify(bench), "user")).ok;
+  assert.equal(JSON.parse(s.benchOps("b9")).err.code, "block_not_found");
+  s.free();
+});

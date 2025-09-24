@@ -51,6 +51,8 @@ pub enum ErrorCode {
     TargetOutOfRange,
     /// A port binding names a net that cannot carry that port (wrong kind, missing, ground misuse).
     PortInvalid,
+    /// The compiler refused a circuit that `apply()` accepted (a generated block's bench).
+    CompileFailed,
 }
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq, thiserror::Error)]

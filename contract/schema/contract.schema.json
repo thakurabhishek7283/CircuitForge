@@ -1344,6 +1344,11 @@
           "type": "string",
           "const": "port_invalid",
           "description": "A port binding names a net that cannot carry that port (wrong kind, missing, ground misuse)."
+        },
+        {
+          "type": "string",
+          "const": "compile_failed",
+          "description": "The compiler refused a circuit that `apply()` accepted (a generated block's bench)."
         }
       ],
       "description": "Error codes returned by `apply()`. These go back to the LLM verbatim during repair and are\nshown to users as friendly text (LLD §4). Additive only within a protocol major version."
@@ -2869,6 +2874,820 @@
         "rails"
       ],
       "description": "One verification point: target values as text (what a user would type) and rail volts."
+    },
+    "BlockRequest": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "template": {
+              "$ref": "#/$defs/InsertBlock"
+            }
+          },
+          "required": [
+            "template"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "draft": {
+              "$ref": "#/$defs/DraftBlock"
+            }
+          },
+          "required": [
+            "draft"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "What to trial: a template at targets (the composer's `use_template`, or the fallback), or a\ndraft."
+    },
+    "DraftBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "template": {
+          "type": "string",
+          "description": "The reference template: ports, rails, spec checks, fallback."
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Target values as typed; a missing target takes the template default.",
+          "default": {}
+        },
+        "ports": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/PortBinding"
+          },
+          "default": {}
+        },
+        "id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Default: the template's title."
+        },
+        "parts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DraftPart"
+          }
+        },
+        "nets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/DraftNet"
+          }
+        }
+      },
+      "required": [
+        "template",
+        "parts",
+        "nets"
+      ],
+      "description": "A block drafted part by part, in the shape of a template's `parts` and `nets`. Refs are the\ndraft's own (`R1`, `U1`: category letter and number) and are renumbered on insertion. A net\nnamed after a port of the reference template is that port, `gnd` is ground, and any other\nname is internal to the block."
+    },
+    "DraftPart": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "part": {
+          "type": "string"
+        },
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Values as written (`\"10k\"`); unspecified params take the registry default.",
+          "default": {}
+        }
+      },
+      "required": [
+        "ref",
+        "part"
+      ]
+    },
+    "DraftNet": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "pins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "`R1.2`, `U1.OUT_A`, in the draft's refs. Text, so a malformed pin is one problem, not a\nrejected draft."
+        }
+      },
+      "required": [
+        "name",
+        "pins"
+      ]
+    },
+    "BlockTrial": {
+      "type": "object",
+      "properties": {
+        "block": {
+          "type": "string"
+        },
+        "template": {
+          "type": "string"
+        },
+        "author": {
+          "$ref": "#/$defs/Author",
+          "description": "Author of `ops`: `llm` for a draft, `template` for a template block."
+        },
+        "ops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Op"
+          },
+          "description": "Ops that add the block to the circuit, `block.begin` … `block.commit`, trial-applied.\nEmpty when there are problems."
+        },
+        "refdes": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Request ref (template local or draft ref) -> refdes in the circuit."
+        },
+        "spec": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/SpecTarget"
+          }
+        },
+        "spec_display": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "problems": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Problem"
+          },
+          "description": "Everything that rejects the block. Empty means: simulate `bench`, then check its spec."
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ErcIssue"
+          },
+          "description": "ERC findings that do not reject a generated block (an unused op-amp unit)."
+        },
+        "bench": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Netlist"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The block alone in its verification bench, compiled with the editor's analyses and the\nblock's checks as `.meas` cards. Absent when there are problems."
+        }
+      },
+      "required": [
+        "block",
+        "template",
+        "author",
+        "ops",
+        "refdes",
+        "spec",
+        "spec_display",
+        "problems",
+        "warnings"
+      ]
+    },
+    "Problem": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/IssueCode"
+        },
+        "message": {
+          "type": "string"
+        },
+        "at": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "The request line it comes from: `part R1`, `net n_a` or `block`."
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "description": "One reason a block cannot commit, returned to the composer verbatim during repair."
+    },
+    "IssueCode": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        {
+          "$ref": "#/$defs/ErcCode"
+        }
+      ]
+    },
+    "JobEvent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "job.state"
+            },
+            "data": {
+              "$ref": "#/$defs/JobStateData"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "narration.delta"
+            },
+            "data": {
+              "$ref": "#/$defs/NarrationData"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "block.ghost"
+            },
+            "data": {
+              "$ref": "#/$defs/GhostData"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "description": "A dashed placeholder for a planned block."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "op"
+            },
+            "data": {
+              "$ref": "#/$defs/OpEnvelope"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "description": "One op of a verified block: validate locally, then animate."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "block.repair"
+            },
+            "data": {
+              "$ref": "#/$defs/RepairData"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "sim.summary"
+            },
+            "data": {
+              "$ref": "#/$defs/SimSummaryData"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "description": "Spec checks of a committed block, measured in its verification bench."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "error"
+            },
+            "data": {
+              "$ref": "#/$defs/ApiError"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "done"
+            },
+            "data": {
+              "$ref": "#/$defs/DoneData"
+            }
+          },
+          "required": [
+            "event",
+            "data"
+          ],
+          "description": "The job finished: the editor unlocks."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "event": {
+              "type": "string",
+              "const": "heartbeat"
+            }
+          },
+          "required": [
+            "event"
+          ],
+          "description": "Every 15 s while the job runs; resets the client's stall timer."
+        }
+      ],
+      "description": "One event on `GET /v1/jobs/{id}/events`. On the wire, `event` is the SSE event name, `data`\nits JSON, and the event's sequence number its SSE `id`, which a reconnect resumes from."
+    },
+    "JobStateData": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/JobState"
+        },
+        "block": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "state"
+      ]
+    },
+    "JobState": {
+      "type": "string",
+      "enum": [
+        "queued",
+        "planning",
+        "composing",
+        "verifying",
+        "repairing",
+        "fallback",
+        "committing",
+        "done",
+        "failed",
+        "cancelled"
+      ],
+      "description": "A generation job's state (LLD §6). `failed` and `cancelled` can follow any other state."
+    },
+    "NarrationData": {
+      "type": "object",
+      "properties": {
+        "block": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ]
+    },
+    "GhostData": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "role": {
+          "$ref": "#/$defs/BlockRole"
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/GhostPort"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "role",
+        "ports"
+      ]
+    },
+    "GhostPort": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "direction": {
+          "$ref": "#/$defs/PortDirection"
+        }
+      },
+      "required": [
+        "name",
+        "direction"
+      ]
+    },
+    "RepairData": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "attempt": {
+          "type": "integer",
+          "format": "uint8",
+          "minimum": 0,
+          "maximum": 255,
+          "description": "The attempt that failed, from 1."
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Its problem codes (`pin_not_found`, `floating_pin`, `spec_miss`, ...)."
+        }
+      },
+      "required": [
+        "id",
+        "attempt",
+        "errors"
+      ]
+    },
+    "SimSummaryData": {
+      "type": "object",
+      "properties": {
+        "block": {
+          "type": "string"
+        },
+        "checks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CheckResult"
+          }
+        }
+      },
+      "required": [
+        "block",
+        "checks"
+      ]
+    },
+    "ApiError": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        },
+        "retryable": {
+          "type": "boolean",
+          "default": false
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "description": "Every error body and the stream's `error` event: `code` is stable (`stale_rev`,\n`not_found`, `rate_limited`, ...), `message` is for people."
+    },
+    "DoneData": {
+      "type": "object",
+      "properties": {
+        "rev": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "usage": {
+          "$ref": "#/$defs/Usage"
+        }
+      },
+      "required": [
+        "rev",
+        "usage"
+      ]
+    },
+    "Usage": {
+      "type": "object",
+      "properties": {
+        "in_tokens": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "out_tokens": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "in_tokens",
+        "out_tokens"
+      ]
+    },
+    "AnonymousSession": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "description": "Bearer token for `Authorization`."
+        },
+        "user_id": {
+          "type": "string"
+        },
+        "expires_in": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0,
+          "description": "Seconds until the token expires."
+        }
+      },
+      "required": [
+        "token",
+        "user_id",
+        "expires_in"
+      ]
+    },
+    "CreateProject": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "ProjectSnapshot": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "$ref": "#/$defs/Project"
+        },
+        "circuit": {
+          "$ref": "#/$defs/Circuit",
+          "description": "At `project.head_rev`."
+        },
+        "lesson": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LessonEntry"
+          }
+        },
+        "active_job": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A generation job still running on this project, if any (the editor stays read-only)."
+        }
+      },
+      "required": [
+        "project",
+        "circuit",
+        "lesson"
+      ],
+      "description": "`GET /v1/projects/{id}`: everything an editor opens."
+    },
+    "Project": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "registry_version": {
+          "type": "string",
+          "description": "Fixed for the project's life: symbols, pin maps and models never change silently."
+        },
+        "head_rev": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "created_at": {
+          "type": "string",
+          "description": "RFC 3339."
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "registry_version",
+        "head_rev",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "LessonEntry": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "block": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/LessonKind"
+        },
+        "text": {
+          "type": "string"
+        },
+        "refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "seq",
+        "kind",
+        "text"
+      ],
+      "description": "One line of a project's lesson track: narration and notes, replayable with their blocks."
+    },
+    "LessonKind": {
+      "type": "string",
+      "enum": [
+        "narration",
+        "note",
+        "repair"
+      ]
+    },
+    "AppendOps": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "base_rev": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "ops": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/OpEnvelope"
+          }
+        }
+      },
+      "required": [
+        "base_rev",
+        "ops"
+      ],
+      "description": "`POST /v1/projects/{id}/ops`: user ops since `base_rev`, applied in order. A mismatched\n`base_rev` is 409 `stale_rev`, and the client reloads the snapshot."
+    },
+    "AppendOk": {
+      "type": "object",
+      "properties": {
+        "rev": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "rev"
+      ]
+    },
+    "GenerateRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/GenerateMode",
+          "default": "compose"
+        },
+        "level": {
+          "$ref": "#/$defs/LearnerLevel",
+          "default": "beginner"
+        }
+      },
+      "required": [
+        "prompt"
+      ],
+      "description": "`POST /v1/projects/{id}/generate`."
+    },
+    "GenerateMode": {
+      "oneOf": [
+        {
+          "type": "string",
+          "const": "compose",
+          "description": "Blocks are composed by the model and fall back to templates."
+        },
+        {
+          "type": "string",
+          "const": "templates",
+          "description": "Every block is a template at targets: what the spend breaker switches to (LLD §13)."
+        }
+      ]
+    },
+    "LearnerLevel": {
+      "type": "string",
+      "enum": [
+        "beginner",
+        "intermediate",
+        "advanced"
+      ]
+    },
+    "JobAccepted": {
+      "type": "object",
+      "properties": {
+        "job_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id"
+      ]
     }
   }
 }

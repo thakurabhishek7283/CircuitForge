@@ -7,6 +7,7 @@
 //! `net.connect`, `analysis.set`, `block.commit`) that still go through `apply()`.
 
 pub mod checks;
+pub mod draft;
 pub mod solvers;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -24,6 +25,7 @@ use crate::units::{Quantity, Unit, parse_quantity};
 use crate::{Registry, edit};
 
 pub use checks::{CheckResult, SpecCheckDef, evaluate_checks};
+pub use draft::{BlockRequest, BlockTrial, DraftBlock, DraftNet, DraftPart, IssueCode, Problem, trial_block};
 
 #[derive(Serialize, Deserialize, JsonSchema, Clone, Debug, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -626,7 +628,7 @@ fn target_err(msg: String) -> OpError {
     OpError::new(E::TargetOutOfRange, msg)
 }
 
-fn template<'r>(reg: &'r Registry, id: &str) -> Result<&'r TemplateDef, OpError> {
+pub(crate) fn template<'r>(reg: &'r Registry, id: &str) -> Result<&'r TemplateDef, OpError> {
     reg.templates.get(id).ok_or_else(|| OpError::new(E::TemplateNotFound, format!("no block template {id}")))
 }
 
@@ -701,134 +703,226 @@ pub fn preview(c: &Circuit, reg: &Registry, req: &InsertBlock) -> Result<Preview
 pub fn instantiate(c: &Circuit, reg: &Registry, req: &InsertBlock) -> Result<Inserted, OpError> {
     let t = template(reg, &req.template)?;
     let preview = preview(c, reg, req)?;
-    let block = match &req.id {
-        Some(id) => id.clone(),
-        None => (1..=crate::ir::MAX_BLOCKS + c.blocks.len())
-            .map(|n| format!("b{n}"))
-            .find(|id| !c.blocks.contains_key(id))
-            .expect("a free block id"),
-    };
-    let upper = block.to_ascii_uppercase();
+    let mut frame = Frame::new(c, t, &preview, &req.ports, req.id.as_ref())?;
+    let refdes = renumber(c, reg, t.parts.iter().map(|(local, tp)| (local.as_str(), tp.part.as_str())))?;
 
-    // Refdes: the lowest free numbers, in template order.
-    let mut scratch = c.clone();
-    let mut refdes = BTreeMap::new();
-    for (local, tp) in &t.parts {
-        let r = edit::next_refdes(&scratch, reg, &tp.part)?;
-        scratch.parts.insert(
-            r.clone(),
-            PartInstance {
-                refdes: r.clone(),
-                part: tp.part.clone(),
-                params: BTreeMap::new(),
-                block: None,
-                origin: Origin::User,
-                pinned: None,
-            },
-        );
-        refdes.insert(local.clone(), r);
-    }
-
-    // Net per template net: bound port nets, rails, ground, or new names.
-    let mut taken: BTreeSet<String> = BTreeSet::new();
-    let fresh = |taken: &mut BTreeSet<String>, base: String| -> NetId {
-        let mut id = base.clone();
-        let mut n = 2;
-        while net_conflict(c, &id, None).is_some() || taken.contains(&id.to_ascii_lowercase()) {
-            id = format!("{base}_{n}");
-            n += 1;
-        }
-        taken.insert(id.to_ascii_lowercase());
-        id
-    };
-    let mut nets: IndexMap<&str, (NetId, Option<NetKind>)> = IndexMap::new();
-    for (name, dir) in &t.ports {
-        let binding = req.ports.get(name);
-        let bound = match (dir, binding) {
-            (PortDirection::Ground, None) => (GND.to_string(), Some(NetKind::Ground)),
-            (PortDirection::Ground, Some(PortBinding::Net(id))) if id == GND => {
-                (GND.to_string(), Some(NetKind::Ground))
-            }
-            (PortDirection::Ground, Some(_)) => {
-                return err(E::PortInvalid, format!("{name} is a ground port: it binds to GND"));
-            }
-            (d, b) if TemplateDef::is_power(*d) => {
-                let rail = &t.rails[name];
-                let volts = preview.rails[name];
-                let net = match b {
-                    Some(PortBinding::Net(id)) | Some(PortBinding::Rail { net: id, .. }) => id.clone(),
-                    _ => rail.net.clone(),
-                };
-                if let Some(existing) = c.nets.get(&net)
-                    && existing.kind != (NetKind::Power { volts })
-                {
-                    return err(E::PortInvalid, format!("{name}: {net} exists and is not a {volts} V rail"));
-                }
-                if net == GND || !valid_net_id(&net) {
-                    return err(E::PortInvalid, format!("{name}: \"{net}\" is not a valid rail name"));
-                }
-                taken.insert(net.to_ascii_lowercase());
-                (net, Some(NetKind::Power { volts }))
-            }
-            (_, Some(PortBinding::Net(id))) => match c.nets.get(id) {
-                Some(n) if n.kind == NetKind::Signal => (id.clone(), None),
-                Some(_) => return err(E::PortInvalid, format!("{name} carries a signal; {id} is a supply or ground")),
-                None => return err(E::PortInvalid, format!("{name}: no net {id}")),
-            },
-            (_, Some(PortBinding::Rail { .. })) => {
-                return err(E::PortInvalid, format!("{name} carries a signal: bind it to a net, not a rail"));
-            }
-            (_, None | Some(PortBinding::New)) => {
-                (fresh(&mut taken, format!("{upper}_{}", name.to_ascii_uppercase())), None)
-            }
-        };
-        nets.insert(name, bound);
-    }
-    for name in t.nets.keys() {
-        if !nets.contains_key(name.as_str()) {
-            nets.insert(name, (fresh(&mut taken, format!("{upper}_{}", name.to_ascii_uppercase())), None));
-        }
-    }
-
-    let mut ops = vec![Op::BlockBegin(BlockBegin {
-        id: block.clone(),
-        role: t.role,
-        title: t.title.clone(),
-        spec: preview.spec.clone(),
-        ports: t
-            .ports
-            .iter()
-            .map(|(name, dir)| BlockPort { name: name.clone(), direction: *dir, net: nets[name.as_str()].0.clone() })
-            .collect(),
-        template: Some(t.id.clone()),
-    })];
+    let mut ops = vec![frame.begin_op(t, &preview, None)];
     for (local, tp) in &t.parts {
         ops.push(Op::PartAdd(PartAdd {
             refdes: refdes[local].clone(),
             part: tp.part.clone(),
             params: preview.values[local].iter().map(|(k, q)| (k.clone(), q.display.clone())).collect(),
-            block: Some(block.clone()),
+            block: Some(frame.block.clone()),
             origin: None,
         }));
     }
     for (name, pins) in &t.nets {
-        let (net, kind) = &nets[name.as_str()];
+        let (net, kind) = frame.net(name);
         ops.push(Op::NetConnect(NetConnect {
-            net: net.clone(),
+            net,
             pins: pins.iter().map(|p| PinRef::new(&refdes[&p.refdes], &p.pin)).collect(),
-            kind: *kind,
+            kind,
             label: None,
         }));
     }
+    ops.extend(analysis_op(c, t, &preview));
+    ops.push(Op::BlockCommit(BlockRef { id: frame.block.clone() }));
+
+    apply_ops(c, reg, &ops, Author::Template, None)?;
+    Ok(Inserted { block: frame.block, ops, refdes, preview })
+}
+
+/// The lowest free refdes for each `(local, part)`, in order.
+pub(crate) fn renumber<'a>(
+    c: &Circuit,
+    reg: &Registry,
+    parts: impl IntoIterator<Item = (&'a str, &'a str)>,
+) -> Result<BTreeMap<String, RefDes>, OpError> {
+    let mut scratch = c.clone();
+    let mut refdes = BTreeMap::new();
+    for (local, part) in parts {
+        let r = edit::next_refdes(&scratch, reg, part)?;
+        scratch.parts.insert(r.clone(), placeholder(&r, part));
+        refdes.insert(local.to_string(), r);
+    }
+    Ok(refdes)
+}
+
+fn placeholder(refdes: &str, part: &str) -> PartInstance {
+    PartInstance {
+        refdes: refdes.to_string(),
+        part: part.to_string(),
+        params: BTreeMap::new(),
+        block: None,
+        origin: Origin::User,
+        pinned: None,
+    }
+}
+
+/// The lowest free block id, `bN`.
+pub(crate) fn free_block_id(c: &Circuit) -> BlockId {
+    (1..=crate::ir::MAX_BLOCKS + c.blocks.len())
+        .map(|n| format!("b{n}"))
+        .find(|id| !c.blocks.contains_key(id))
+        .expect("a free block id")
+}
+
+/// A block being added to a circuit: its id and the net behind each of its template nets. Ports
+/// bind as requested (signals default to a new net, power to the template's rail, ground to
+/// GND); every other net gets a new name, `B2_N_A`, free of clashes.
+pub(crate) struct Frame<'c> {
+    c: &'c Circuit,
+    pub block: BlockId,
+    upper: String,
+    nets: IndexMap<String, (NetId, Option<NetKind>)>,
+    taken: BTreeSet<String>,
+}
+
+impl<'c> Frame<'c> {
+    pub(crate) fn new(
+        c: &'c Circuit,
+        t: &TemplateDef,
+        preview: &Preview,
+        ports: &BTreeMap<String, PortBinding>,
+        id: Option<&BlockId>,
+    ) -> Result<Frame<'c>, OpError> {
+        let block = id.cloned().unwrap_or_else(|| free_block_id(c));
+        let upper = block.to_ascii_uppercase();
+        let mut frame = Frame { c, block, upper, nets: IndexMap::new(), taken: BTreeSet::new() };
+        for (name, dir) in &t.ports {
+            let bound = match (dir, ports.get(name)) {
+                (PortDirection::Ground, None) => (GND.to_string(), Some(NetKind::Ground)),
+                (PortDirection::Ground, Some(PortBinding::Net(id))) if id == GND => {
+                    (GND.to_string(), Some(NetKind::Ground))
+                }
+                (PortDirection::Ground, Some(_)) => {
+                    return err(E::PortInvalid, format!("{name} is a ground port: it binds to GND"));
+                }
+                (d, b) if TemplateDef::is_power(*d) => {
+                    let rail = &t.rails[name];
+                    let volts = preview.rails[name];
+                    let net = match b {
+                        Some(PortBinding::Net(id)) | Some(PortBinding::Rail { net: id, .. }) => id.clone(),
+                        _ => rail.net.clone(),
+                    };
+                    if let Some(existing) = c.nets.get(&net)
+                        && existing.kind != (NetKind::Power { volts })
+                    {
+                        return err(E::PortInvalid, format!("{name}: {net} exists and is not a {volts} V rail"));
+                    }
+                    if net == GND || !valid_net_id(&net) {
+                        return err(E::PortInvalid, format!("{name}: \"{net}\" is not a valid rail name"));
+                    }
+                    frame.taken.insert(net.to_ascii_lowercase());
+                    (net, Some(NetKind::Power { volts }))
+                }
+                (_, Some(PortBinding::Net(id))) => match c.nets.get(id) {
+                    Some(n) if n.kind == NetKind::Signal => (id.clone(), None),
+                    Some(_) => {
+                        return err(E::PortInvalid, format!("{name} carries a signal; {id} is a supply or ground"));
+                    }
+                    None => return err(E::PortInvalid, format!("{name}: no net {id}")),
+                },
+                (_, Some(PortBinding::Rail { .. })) => {
+                    return err(E::PortInvalid, format!("{name} carries a signal: bind it to a net, not a rail"));
+                }
+                (_, None | Some(PortBinding::New)) => (frame.fresh(name), None),
+            };
+            frame.nets.insert(name.clone(), bound);
+        }
+        Ok(frame)
+    }
+
+    /// A new net id `B2_<NAME>` that clashes with nothing in the circuit or this block.
+    fn fresh(&mut self, name: &str) -> NetId {
+        let base = format!("{}_{}", self.upper, name.to_ascii_uppercase());
+        let mut id = base.clone();
+        let mut n = 2;
+        while net_conflict(self.c, &id, None).is_some() || self.taken.contains(&id.to_ascii_lowercase()) {
+            id = format!("{base}_{n}");
+            n += 1;
+        }
+        self.taken.insert(id.to_ascii_lowercase());
+        id
+    }
+
+    /// The net behind template net `name` (lowercase): a port's net, GND for `gnd`, or a new one.
+    pub(crate) fn net(&mut self, name: &str) -> (NetId, Option<NetKind>) {
+        if let Some(n) = self.nets.get(name) {
+            return n.clone();
+        }
+        let bound = if name == "gnd" { (GND.to_string(), Some(NetKind::Ground)) } else { (self.fresh(name), None) };
+        self.nets.insert(name.to_string(), bound.clone());
+        bound
+    }
+
+    pub(crate) fn begin_op(&self, t: &TemplateDef, preview: &Preview, title: Option<&str>) -> Op {
+        Op::BlockBegin(BlockBegin {
+            id: self.block.clone(),
+            role: t.role,
+            title: title.unwrap_or(&t.title).to_string(),
+            spec: preview.spec.clone(),
+            ports: t
+                .ports
+                .iter()
+                .map(|(name, dir)| BlockPort { name: name.clone(), direction: *dir, net: self.nets[name].0.clone() })
+                .collect(),
+            template: Some(t.id.clone()),
+        })
+    }
+}
+
+/// `analysis.set` for what the block's checks need beyond the circuit's analyses, if anything.
+pub(crate) fn analysis_op(c: &Circuit, t: &TemplateDef, preview: &Preview) -> Option<Op> {
     let needs = t.checks.iter().filter_map(|ch| {
         let target = preview.spec.get(&ch.name)?.target;
         Some(checks::need(ch, target))
     });
-    if let Some(analyses) = checks::merge_analyses(&c.analyses, needs) {
-        ops.push(Op::AnalysisSet(crate::ops::AnalysisSet { analyses }));
-    }
-    ops.push(Op::BlockCommit(BlockRef { id: block.clone() }));
+    checks::merge_analyses(&c.analyses, needs).map(|analyses| Op::AnalysisSet(crate::ops::AnalysisSet { analyses }))
+}
 
-    apply_ops(c, reg, &ops, Author::Template, None)?;
-    Ok(Inserted { block, ops, refdes, preview })
+// ---------------------------------------------------------------- verification bench
+
+/// The test bench a template block is verified in (LLD §12 step 2, the template's `verify`): a
+/// sine source from each driven port to ground and a load resistor from each loaded port to
+/// ground. CI verifies templates in it, and generated blocks are checked in it (ERC and spec
+/// checks), so an open input or output is never mistaken for a fault. Apply as author `user`.
+pub fn bench_ops(c: &Circuit, reg: &Registry, block: &str) -> Result<Vec<Op>, OpError> {
+    let b = c.blocks.get(block).ok_or_else(|| OpError::new(E::BlockNotFound, format!("no block {block}")))?;
+    let tid = b.template.as_deref().ok_or_else(|| {
+        OpError::new(E::TemplateNotFound, format!("block {block} has no template, so no verification bench"))
+    })?;
+    let Some(verify) = &template(reg, tid)?.verify else { return Ok(Vec::new()) };
+    let port_net = |port: &str| {
+        b.ports
+            .iter()
+            .find(|p| p.name == port)
+            .map(|p| p.net.clone())
+            .ok_or_else(|| OpError::new(E::PortInvalid, format!("block {block} has no port {port}")))
+    };
+    let mut scratch = c.clone();
+    let mut ops = Vec::new();
+    let mut add = |part: &str, params: &[(&str, f64)], pins: (&str, &str), net: NetId| -> Result<(), OpError> {
+        let r = edit::next_refdes(&scratch, reg, part)?;
+        scratch.parts.insert(r.clone(), placeholder(&r, part));
+        ops.push(Op::PartAdd(PartAdd {
+            refdes: r.clone(),
+            part: part.to_string(),
+            params: params.iter().map(|(k, v)| (k.to_string(), format!("{v}"))).collect(),
+            block: None,
+            origin: None,
+        }));
+        for (net, pin) in [(net, pins.0), (GND.to_string(), pins.1)] {
+            ops.push(Op::NetConnect(NetConnect { net, pins: vec![PinRef::new(&r, pin)], kind: None, label: None }));
+        }
+        Ok(())
+    };
+    for (port, d) in &verify.drive {
+        let params = [("offset", d.offset), ("amplitude", d.amplitude), ("frequency", d.frequency)];
+        add("vsource_sine", &params, ("P", "N"), port_net(port)?)?;
+    }
+    for (port, ohms) in &verify.load {
+        add("resistor_th", &[("resistance", *ohms)], ("1", "2"), port_net(port)?)?;
+    }
+    Ok(ops)
 }

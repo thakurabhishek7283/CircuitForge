@@ -333,6 +333,7 @@ class ErrorCode(
         | Literal["template_not_found"]
         | Literal["target_out_of_range"]
         | Literal["port_invalid"]
+        | Literal["compile_failed"]
     ]
 ):
     root: Annotated[
@@ -350,7 +351,8 @@ class ErrorCode(
         | Literal["forbidden"]
         | Literal["template_not_found"]
         | Literal["target_out_of_range"]
-        | Literal["port_invalid"],
+        | Literal["port_invalid"]
+        | Literal["compile_failed"],
         Field(
             description="Error codes returned by `apply()`. These go back to the LLM verbatim during repair and are\nshown to users as friendly text (LLD §4). Additive only within a protocol major version."
         ),
@@ -699,6 +701,160 @@ class VerifyPoint(BaseModel):
 
     targets: dict[str, str]
     rails: dict[str, float]
+
+
+class DraftPart(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    ref: str
+    part: str
+    params: Annotated[
+        dict[str, str] | None,
+        Field(
+            description='Values as written (`"10k"`); unspecified params take the registry default.'
+        ),
+    ] = {}
+
+
+class DraftNet(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    name: str
+    pins: Annotated[
+        list[str],
+        Field(
+            description="`R1.2`, `U1.OUT_A`, in the draft's refs. Text, so a malformed pin is one problem, not a\nrejected draft."
+        ),
+    ]
+
+
+class IssueCode(RootModel[ErrorCode | ErcCode]):
+    root: ErrorCode | ErcCode
+
+
+class JobEvent9(BaseModel):
+    """
+    Every 15 s while the job runs; resets the client's stall timer.
+    """
+
+    event: Literal["heartbeat"]
+
+
+class JobState(StrEnum):
+    """
+    A generation job's state (LLD §6). `failed` and `cancelled` can follow any other state.
+    """
+
+    queued = "queued"
+    planning = "planning"
+    composing = "composing"
+    verifying = "verifying"
+    repairing = "repairing"
+    fallback = "fallback"
+    committing = "committing"
+    done = "done"
+    failed = "failed"
+    cancelled = "cancelled"
+
+
+class NarrationData(BaseModel):
+    block: str | None = None
+    text: str
+
+
+class GhostPort(BaseModel):
+    name: str
+    direction: PortDirection
+
+
+class RepairData(BaseModel):
+    id: str
+    attempt: Annotated[
+        int, Field(description="The attempt that failed, from 1.", ge=0, le=255)
+    ]
+    errors: Annotated[
+        list[str],
+        Field(
+            description="Its problem codes (`pin_not_found`, `floating_pin`, `spec_miss`, ...)."
+        ),
+    ]
+
+
+class SimSummaryData(BaseModel):
+    block: str
+    checks: list[CheckResult]
+
+
+class ApiError(BaseModel):
+    """
+    Every error body and the stream's `error` event: `code` is stable (`stale_rev`,
+    `not_found`, `rate_limited`, ...), `message` is for people.
+    """
+
+    code: str
+    message: str
+    retryable: bool | None = False
+
+
+class Usage(BaseModel):
+    in_tokens: Annotated[int, Field(ge=0)]
+    out_tokens: Annotated[int, Field(ge=0)]
+
+
+class AnonymousSession(BaseModel):
+    token: Annotated[str, Field(description="Bearer token for `Authorization`.")]
+    user_id: str
+    expires_in: Annotated[
+        int, Field(description="Seconds until the token expires.", ge=0)
+    ]
+
+
+class CreateProject(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    title: str | None = None
+
+
+class Project(BaseModel):
+    id: str
+    title: str
+    registry_version: Annotated[
+        str,
+        Field(
+            description="Fixed for the project's life: symbols, pin maps and models never change silently."
+        ),
+    ]
+    head_rev: Annotated[int, Field(ge=0)]
+    created_at: Annotated[str, Field(description="RFC 3339.")]
+    updated_at: str
+
+
+class LessonKind(StrEnum):
+    narration = "narration"
+    note = "note"
+    repair = "repair"
+
+
+class AppendOk(BaseModel):
+    rev: Annotated[int, Field(ge=0)]
+
+
+class GenerateMode(StrEnum):
+    compose = "compose"
+    templates = "templates"
+
+
+class LearnerLevel(StrEnum):
+    beginner = "beginner"
+    intermediate = "intermediate"
+    advanced = "advanced"
+
+
+class JobAccepted(BaseModel):
+    job_id: str
 
 
 class Quantity(BaseModel):
@@ -1227,6 +1383,146 @@ class Preview(BaseModel):
     ]
 
 
+class BlockRequest1(BaseModel):
+    """
+    What to trial: a template at targets (the composer's `use_template`, or the fallback), or a
+    draft.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    template: InsertBlock
+
+
+class DraftBlock(BaseModel):
+    """
+    A block drafted part by part, in the shape of a template's `parts` and `nets`. Refs are the
+    draft's own (`R1`, `U1`: category letter and number) and are renumbered on insertion. A net
+    named after a port of the reference template is that port, `gnd` is ground, and any other
+    name is internal to the block.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    template: Annotated[
+        str,
+        Field(
+            description="The reference template: ports, rails, spec checks, fallback."
+        ),
+    ]
+    targets: Annotated[
+        dict[str, str] | None,
+        Field(
+            description="Target values as typed; a missing target takes the template default."
+        ),
+    ] = {}
+    ports: Annotated[dict[str, PortBinding] | None, Field(validate_default=True)] = {}
+    id: str | None = None
+    title: Annotated[
+        str | None, Field(description="Default: the template's title.")
+    ] = None
+    parts: list[DraftPart]
+    nets: list[DraftNet]
+
+
+class Problem(BaseModel):
+    """
+    One reason a block cannot commit, returned to the composer verbatim during repair.
+    """
+
+    code: IssueCode
+    message: str
+    at: Annotated[
+        str | None,
+        Field(
+            description="The request line it comes from: `part R1`, `net n_a` or `block`."
+        ),
+    ] = None
+
+
+class JobEvent2(BaseModel):
+    """
+    One event on `GET /v1/jobs/{id}/events`. On the wire, `event` is the SSE event name, `data`
+    its JSON, and the event's sequence number its SSE `id`, which a reconnect resumes from.
+    """
+
+    event: Literal["narration.delta"]
+    data: NarrationData
+
+
+class JobEvent5(BaseModel):
+    """
+    One event on `GET /v1/jobs/{id}/events`. On the wire, `event` is the SSE event name, `data`
+    its JSON, and the event's sequence number its SSE `id`, which a reconnect resumes from.
+    """
+
+    event: Literal["block.repair"]
+    data: RepairData
+
+
+class JobEvent6(BaseModel):
+    """
+    Spec checks of a committed block, measured in its verification bench.
+    """
+
+    event: Literal["sim.summary"]
+    data: SimSummaryData
+
+
+class JobEvent7(BaseModel):
+    """
+    One event on `GET /v1/jobs/{id}/events`. On the wire, `event` is the SSE event name, `data`
+    its JSON, and the event's sequence number its SSE `id`, which a reconnect resumes from.
+    """
+
+    event: Literal["error"]
+    data: ApiError
+
+
+class JobStateData(BaseModel):
+    state: JobState
+    block: str | None = None
+
+
+class GhostData(BaseModel):
+    id: str
+    title: str
+    role: BlockRole
+    ports: list[GhostPort]
+
+
+class DoneData(BaseModel):
+    rev: Annotated[int, Field(ge=0)]
+    usage: Usage
+
+
+class LessonEntry(BaseModel):
+    """
+    One line of a project's lesson track: narration and notes, replayable with their blocks.
+    """
+
+    seq: Annotated[int, Field(ge=0)]
+    block: str | None = None
+    kind: LessonKind
+    text: str
+    refs: list[str] | None = []
+
+
+class GenerateRequest(BaseModel):
+    """
+    `POST /v1/projects/{id}/generate`.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    prompt: str
+    mode: GenerateMode | None = "compose"
+    level: LearnerLevel | None = "beginner"
+
+
 class PartInstance(BaseModel):
     refdes: str
     part: str
@@ -1610,6 +1906,149 @@ class Inserted(BaseModel):
     preview: Preview
 
 
+class BlockRequest2(BaseModel):
+    """
+    What to trial: a template at targets (the composer's `use_template`, or the fallback), or a
+    draft.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    draft: DraftBlock
+
+
+class BlockRequest(RootModel[BlockRequest1 | BlockRequest2]):
+    root: Annotated[
+        BlockRequest1 | BlockRequest2,
+        Field(
+            description="What to trial: a template at targets (the composer's `use_template`, or the fallback), or a\ndraft."
+        ),
+    ]
+
+
+class BlockTrial(BaseModel):
+    block: str
+    template: str
+    author: Annotated[
+        Author,
+        Field(
+            description="Author of `ops`: `llm` for a draft, `template` for a template block."
+        ),
+    ]
+    ops: Annotated[
+        list[Op],
+        Field(
+            description="Ops that add the block to the circuit, `block.begin` … `block.commit`, trial-applied.\nEmpty when there are problems."
+        ),
+    ]
+    refdes: Annotated[
+        dict[str, str],
+        Field(
+            description="Request ref (template local or draft ref) -> refdes in the circuit."
+        ),
+    ]
+    spec: dict[str, SpecTarget]
+    spec_display: dict[str, str]
+    problems: Annotated[
+        list[Problem],
+        Field(
+            description="Everything that rejects the block. Empty means: simulate `bench`, then check its spec."
+        ),
+    ]
+    warnings: Annotated[
+        list[ErcIssue],
+        Field(
+            description="ERC findings that do not reject a generated block (an unused op-amp unit)."
+        ),
+    ]
+    bench: Annotated[
+        Netlist | None,
+        Field(
+            description="The block alone in its verification bench, compiled with the editor's analyses and the\nblock's checks as `.meas` cards. Absent when there are problems."
+        ),
+    ] = None
+
+
+class JobEvent1(BaseModel):
+    """
+    One event on `GET /v1/jobs/{id}/events`. On the wire, `event` is the SSE event name, `data`
+    its JSON, and the event's sequence number its SSE `id`, which a reconnect resumes from.
+    """
+
+    event: Literal["job.state"]
+    data: JobStateData
+
+
+class JobEvent3(BaseModel):
+    """
+    A dashed placeholder for a planned block.
+    """
+
+    event: Literal["block.ghost"]
+    data: GhostData
+
+
+class JobEvent4(BaseModel):
+    """
+    One op of a verified block: validate locally, then animate.
+    """
+
+    event: Literal["op"]
+    data: OpEnvelope
+
+
+class JobEvent8(BaseModel):
+    """
+    The job finished: the editor unlocks.
+    """
+
+    event: Literal["done"]
+    data: DoneData
+
+
+class JobEvent(
+    RootModel[
+        JobEvent1
+        | JobEvent2
+        | JobEvent3
+        | JobEvent4
+        | JobEvent5
+        | JobEvent6
+        | JobEvent7
+        | JobEvent8
+        | JobEvent9
+    ]
+):
+    root: Annotated[
+        JobEvent1
+        | JobEvent2
+        | JobEvent3
+        | JobEvent4
+        | JobEvent5
+        | JobEvent6
+        | JobEvent7
+        | JobEvent8
+        | JobEvent9,
+        Field(
+            description="One event on `GET /v1/jobs/{id}/events`. On the wire, `event` is the SSE event name, `data`\nits JSON, and the event's sequence number its SSE `id`, which a reconnect resumes from."
+        ),
+    ]
+
+
+class AppendOps(BaseModel):
+    """
+    `POST /v1/projects/{id}/ops`: user ops since `base_rev`, applied in order. A mismatched
+    `base_rev` is 409 `stale_rev`, and the client reloads the snapshot.
+    """
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+    base_rev: Annotated[int, Field(ge=0)]
+    ops: list[OpEnvelope]
+
+
 class Circuit(BaseModel):
     schema_version: Annotated[int, Field(ge=0, le=65535)]
     registry_version: str
@@ -1659,3 +2098,19 @@ class Registry(BaseModel):
             validate_default=True,
         ),
     ] = {}
+
+
+class ProjectSnapshot(BaseModel):
+    """
+    `GET /v1/projects/{id}`: everything an editor opens.
+    """
+
+    project: Project
+    circuit: Annotated[Circuit, Field(description="At `project.head_rev`.")]
+    lesson: list[LessonEntry]
+    active_job: Annotated[
+        str | None,
+        Field(
+            description="A generation job still running on this project, if any (the editor stays read-only)."
+        ),
+    ] = None

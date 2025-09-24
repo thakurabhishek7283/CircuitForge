@@ -44,28 +44,18 @@ def request(tid: str, k: int) -> dict[str, Any]:
 
 
 def build(tid: str, k: int) -> tuple[Bench, dict[str, Any]]:
-    """The template at verification point k, inside its test bench."""
+    """The template at verification point k, inside its test bench (circuit-core's `bench_ops`, the
+    bench generated blocks are verified in too)."""
     t = TEMPLATES[tid]
     point = cc.unwrap(REG.verify_points(tid))[k]
     bench = Bench(REG)
     s = bench.session
-    req = request(tid, k)
-    ins = cc.unwrap(s.insert_block(json.dumps(req)))
+    ins = cc.unwrap(s.insert_block(json.dumps(request(tid, k))))
     cc.unwrap(s.apply_ops(json.dumps(ins["ops"]), "template"))
-    nets = {p["name"]: p["net"] for p in json.loads(s.snapshot())["blocks"][ins["block"]]["ports"]}
-    verify = t.get("verify") or {}
-    for port, d in verify.get("drive", {}).items():
-        r = cc.unwrap(s.next_refdes("vsource_sine"))
-        bench.part(r, "vsource_sine", offset=repr(d.get("offset", 0)), amplitude=repr(d["amplitude"]),
-                   frequency=repr(d["frequency"]))
-        bench.net(nets[port], f"{r}.P").net("GND", f"{r}.N")
-    for port, ohms in verify.get("load", {}).items():
-        r = cc.unwrap(s.next_refdes("resistor_th"))
-        bench.part(r, "resistor_th", resistance=repr(ohms))
-        bench.net(nets[port], f"{r}.1").net("GND", f"{r}.2")
+    cc.unwrap(s.apply_ops(json.dumps(cc.unwrap(s.bench_ops(ins["block"]))), "user"))
     for port, direction in t["ports"].items():
         if direction == "input":
-            assert port in verify.get("drive", {}), f"{tid}: input {port} has no drive in its verify bench"
+            assert port in (t.get("verify") or {}).get("drive", {}), f"{tid}: input {port} has no drive in its verify bench"
     return bench, point
 
 
@@ -92,12 +82,19 @@ def test_browser_inserts_and_measures_the_same(tmp_path):
     """The WASM core inserts every template with byte-identical ops, and the browser engine
     (sim.engine.ts on ngspice.wasm, replaying the same .meas cards) passes the same checks."""
     reqs = [request(tid, k) for tid, k in POINTS]
-    (tmp_path / "inserts.json").write_text(json.dumps(reqs), encoding="utf-8")
+    calls = [{"req": r} for r in reqs] + [{"req": r, "bench": True} for r in reqs]
+    (tmp_path / "inserts.json").write_text(json.dumps(calls), encoding="utf-8")
     subprocess.run([NODE, str(REPO / "tools/sim/insert_wasm.mjs"), str(tmp_path / "inserts.json"), str(tmp_path / "inserted.json")],
                    check=True, cwd=REPO)
     wasm_inserts = json.loads((tmp_path / "inserted.json").read_text(encoding="utf-8"))
-    for req, theirs in zip(reqs, wasm_inserts, strict=True):
-        assert theirs == cc.Session(REG).insert_block(json.dumps(req)), req
+    for call, theirs in zip(calls, wasm_inserts, strict=True):
+        s = cc.Session(REG)
+        ours = s.insert_block(json.dumps(call["req"]))
+        if call.get("bench"):
+            ins = cc.unwrap(ours)
+            cc.unwrap(s.apply_ops(json.dumps(ins["ops"]), "template"))
+            ours = s.bench_ops(ins["block"])
+        assert theirs == ours, call
 
     netlists = [build(tid, k)[0].netlist(interactive=True) for tid, k in POINTS]
     sims = [{"netlist": n["text"], "includes": n["includes"], "hash": n["hash"]} for n in netlists]

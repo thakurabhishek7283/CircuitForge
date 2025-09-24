@@ -113,6 +113,13 @@ impl CoreSession {
         api::insert_block(&self.inner, req)
     }
 
+    /// Ops that put template block `block` in its verification bench → `{"ok": Op[]} | {"err": OpError}`.
+    /// Apply them with author `"user"`.
+    #[wasm_bindgen(js_name = benchOps)]
+    pub fn bench_ops(&self, block: &str) -> String {
+        api::bench_ops(&self.inner, block)
+    }
+
     /// The full `Circuit` JSON.
     pub fn snapshot(&self) -> String {
         api::snapshot(&self.inner)

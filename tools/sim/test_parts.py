@@ -7,7 +7,7 @@ import math
 from pytest import approx
 
 from circuits import Bench, ac, dc, op, tran
-from ngspice_batch import SimResult
+from sim_runner.ngspice_batch import SimResult
 
 COVERED: set[str] = set()
 

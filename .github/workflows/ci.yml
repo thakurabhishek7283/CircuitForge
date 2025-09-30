@@ -48,7 +48,7 @@ jobs:
       - name: Python env
         run: |
           uv venv --python 3.12 .venv
-          uv pip install --python .venv maturin pytest "pydantic>=2.9,<3"
+          uv pip install --python .venv maturin pytest "pydantic>=2.9,<3" -e "workers/sim_runner[test]"
           echo "PYO3_PYTHON=$PWD/.venv/bin/python" >> "$GITHUB_ENV"
 
       - name: Format
@@ -84,6 +84,12 @@ jobs:
         run: |
           chmod +x third_party/ngspice/dist/native/bin/*
           .venv/bin/python -m pytest -q tools/sim
+      # The worker on Redis 7 (testcontainers; Docker is on the runner) with the sandbox rlimits.
+      - name: sim_runner worker (queue, cache, refusals, limits)
+        env:
+          REQUIRE_NGSPICE: "1"
+          REQUIRE_DOCKER: "1"
+        run: .venv/bin/python -m pytest -q workers/sim_runner/tests
       - name: circuit-core browser build (@tutor/core for Vite)
         run: node crates/circuit-core-wasm/build.mjs
       # Store, layout, schematic and sim worker against the real core, registry bundle and
@@ -119,3 +125,30 @@ jobs:
           name: web-dist
           path: apps/web/dist
           retention-days: 7
+
+  sim-runner-image:
+    name: sim_runner image (ngspice from source, sandboxed selftest, worker health)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: workers/sim_runner/Dockerfile
+          tags: circuit-forge/sim-runner:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=sim-runner
+          cache-to: type=gha,mode=max,scope=sim-runner
+      - name: Selftest under the production sandbox (read-only, no network, tmpfs, no capabilities)
+        run: >-
+          docker run --rm --read-only --network none --tmpfs /tmp:size=512m,mode=1777
+          --cap-drop ALL --security-opt no-new-privileges
+          circuit-forge/sim-runner:ci python -m sim_runner.selftest
+      - name: Worker starts on the internal network and reports healthy
+        env:
+          SIM_RUNNER_IMAGE: circuit-forge/sim-runner:ci
+        run: docker compose up -d --no-build --wait --wait-timeout 120 redis sim_runner
+      - if: always()
+        run: docker compose logs && docker compose down

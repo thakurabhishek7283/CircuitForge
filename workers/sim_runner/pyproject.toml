@@ -1,0 +1,21 @@
+[project]
+name = "sim-runner"
+version = "0.1.0"
+description = "Circuit Forge simulation worker: circuit-core netlists on the pinned native ngspice (LLD §8)"
+requires-python = ">=3.12"
+dependencies = ["arq==0.28.0", "redis>=5,<6"]  # arq 0.28 pins redis-py < 6
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=1.4", "testcontainers>=4.15"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["sim_runner"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

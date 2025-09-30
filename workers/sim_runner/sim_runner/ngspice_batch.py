@@ -1,8 +1,9 @@
 """Run a circuit-core netlist through the pinned native ngspice (`ngspice -b`, LLD §8).
 
-Used by the simulation tests now and meant to become the core of `workers/sim_runner`. The
-browser worker (apps/web/src/workers/sim.engine.ts) drives the same deck the same way through
-the shared-library API, so both return the same vectors, `.meas` values and status codes.
+The engine of the sim_runner worker (`sim_runner.worker`) and of the simulation tests in
+tools/sim. The browser worker (apps/web/src/workers/sim.engine.ts) drives the same deck the same
+way through the shared-library API, so both return the same vectors, `.meas` values and status
+codes.
 
 Two ngspice 47 behaviours shape the driver:
 
@@ -18,9 +19,11 @@ Two ngspice 47 behaviours shape the driver:
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -30,9 +33,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-REPO = Path(__file__).resolve().parents[2]
-REGISTRY_DIR = REPO / "registry"
+REPO = Path(__file__).resolve().parents[3]
+# The registry's model files; the sim_runner image sets SIM_REGISTRY_DIR to its copy of them.
+REGISTRY_DIR = Path(os.environ.get("SIM_REGISTRY_DIR") or REPO / "registry")
 TIMEOUT_S = 2.0  # LLD §1 hard limit for server simulations
+MEMORY_LIMIT = 256 * 2**20  # LLD §8: RLIMIT_AS for one ngspice process
 
 Status = Literal["ok", "no_convergence", "singular_matrix", "timeout", "error"]
 Unit = Literal["V", "A", "Hz", "s"]
@@ -190,6 +195,17 @@ def parse_raw(data: bytes) -> tuple[str, list[tuple[str, str, int | None]], list
     return plotname, variables, real, imag
 
 
+def raw_plotname(path: Path) -> str:
+    """A binary rawfile's plot name, read from its header without loading the values."""
+    with path.open("rb") as f:
+        head = f.read(4096)
+    for line in head.decode("latin-1").splitlines():
+        key, _, value = line.partition(":")
+        if key == "Plotname":
+            return value.strip()
+    return ""
+
+
 def classify(log: str, failed: bool) -> Status:
     if not failed:
         return "ok"
@@ -208,6 +224,19 @@ def ngspice_path() -> Path | None:
     return p if p.exists() else None
 
 
+def command(exe: Path, timeout_s: float, limits: bool) -> list[str]:
+    """`ngspice -b deck.cir`; with `limits` on POSIX, under RLIMIT_AS and RLIMIT_CPU (LLD §8). The
+    limits are set by `sh` before it execs ngspice, because `preexec_fn` is unsafe in a process
+    with threads (the worker runs each simulation in a thread)."""
+    if not limits or os.name == "nt":
+        return [str(exe), "-b", "deck.cir"]
+    script = f'ulimit -v {MEMORY_LIMIT // 1024} && ulimit -t {math.ceil(timeout_s)} && exec "$0" -b deck.cir'
+    return ["/bin/sh", "-c", script, str(exe)]
+
+
+# Killed for exceeding RLIMIT_CPU: SIGXCPU at the soft limit, SIGKILL at the hard one.
+CPU_KILLED = {-getattr(signal, "SIGXCPU", 24), -signal.SIGKILL} if os.name != "nt" else set()
+
 MEAS_LINE = re.compile(r"^\s*(\S+)\s+=\s+(\S+)")
 
 
@@ -219,8 +248,14 @@ def simulate(
     timeout_s: float = TIMEOUT_S,
     registry_dir: Path = REGISTRY_DIR,
     ngspice: Path | None = None,
+    vectors: bool = True,
+    limits: bool = False,
 ) -> SimResult:
-    """Simulate a compiled netlist. `includes` are registry-relative model files (Netlist.includes)."""
+    """Simulate a compiled netlist. `includes` are registry-relative model files (Netlist.includes).
+
+    `vectors=False` skips reading the result vectors (the server needs only `.meas` values and the
+    status; parsing a long transient costs up to 100 ms of CPU). `limits` applies the sandbox
+    rlimits where the OS has them."""
     exe = ngspice or ngspice_path()
     if exe is None:
         raise FileNotFoundError("ngspice not built: run third_party/ngspice/build-native.sh")
@@ -238,30 +273,36 @@ def simulate(
         (work / "deck.cir").write_text("\n".join(deck.body + control_block(deck) + [".end", ""]), encoding="utf-8")
         try:
             proc = subprocess.run(
-                [str(exe), "-b", "deck.cir"], cwd=work, capture_output=True, timeout=timeout_s, check=False
+                command(exe, timeout_s, limits), cwd=work, capture_output=True, timeout=timeout_s, check=False
             )
         except subprocess.TimeoutExpired as e:
             log = (e.stdout or b"").decode("utf-8", "replace") + (e.stderr or b"").decode("utf-8", "replace")
             return SimResult(hash, [], {}, "timeout", log, (time.perf_counter() - started) * 1e3)
         log = proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
+        if limits and proc.returncode in CPU_KILLED:
+            return SimResult(hash, [], {}, "timeout", log, (time.perf_counter() - started) * 1e3)
 
-        vectors: list[Vector] = []
+        results: list[Vector] = []
         missing = False
         for plot, analysis in zip(deck.plots, deck.analyses):
             path = work / f"{plot}.raw"
             if not path.exists():
                 missing = True
                 continue
+            if not vectors:
+                # `setplot` failed and `write` wrote whatever plot was current
+                missing |= PLOTNAME_ANALYSIS.get(raw_plotname(path).lower()) != analysis
+                continue
             plotname, variables, real, imag = parse_raw(path.read_bytes())
             if PLOTNAME_ANALYSIS.get(plotname.lower()) != analysis:
-                missing = True  # `setplot` failed and `write` wrote whatever plot was current
+                missing = True
                 continue
             for k, (name, vtype, dims) in enumerate(variables):
                 unit = UNITS.get(vtype)
                 if unit is None or dims == 0 or is_internal(name):
                     continue
                 n = len(real[k]) if dims is None else dims
-                vectors.append(
+                results.append(
                     Vector(canonical_name(name), analysis, unit, real[k][:n], imag[k][:n] if imag else None)
                 )
 
@@ -277,7 +318,7 @@ def simulate(
     failed = proc.returncode != 0 or missing or bool(FAILURE.search(log))
     return SimResult(
         hash,
-        vectors,
+        results,
         meas,
         classify(log, failed),
         log,

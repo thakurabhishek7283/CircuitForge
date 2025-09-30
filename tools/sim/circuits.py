@@ -12,7 +12,7 @@ from typing import Any
 
 import circuit_core as cc
 
-from ngspice_batch import REPO, SimResult, simulate
+from sim_runner.ngspice_batch import REPO, SimResult, simulate
 
 DEMO_FIXTURE = REPO / "crates" / "circuit-core" / "tests" / "fixtures" / "demo_sallen_key.json"
 

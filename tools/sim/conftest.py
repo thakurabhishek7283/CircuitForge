@@ -9,7 +9,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).parent))
 
 import circuit_core as cc  # noqa: E402
-from ngspice_batch import REGISTRY_DIR, REPO, ngspice_path  # noqa: E402
+from sim_runner.ngspice_batch import REGISTRY_DIR, REPO, ngspice_path  # noqa: E402
 
 
 def ngspice_version() -> str:

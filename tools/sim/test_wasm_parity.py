@@ -13,7 +13,7 @@ import pytest
 import circuits
 import test_demo
 import test_parts
-from ngspice_batch import REPO, simulate as native_simulate
+from sim_runner.ngspice_batch import REPO, simulate as native_simulate
 
 WASM = REPO / "third_party" / "ngspice" / "dist" / "wasm" / "ngspice.mjs"
 RUNNER = REPO / "tools" / "sim" / "run_wasm.mts"

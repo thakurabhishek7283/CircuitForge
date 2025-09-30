@@ -2,8 +2,9 @@
 // circuit-core netlist and returns a SimResult. No browser APIs here, so the same code runs in the
 // worker and in Node tests.
 //
-// The deck is handled exactly like the native batch driver (tools/sim/ngspice_batch.py), and the
-// cross-runtime test (tools/sim/test_wasm_parity.py) holds both to the same results:
+// The deck is handled exactly like the native batch driver (workers/sim_runner/sim_runner/
+// ngspice_batch.py), and the cross-runtime test (tools/sim/test_wasm_parity.py) holds both to the
+// same results:
 // - `.meas` cards are lifted out of the deck and replayed after `run` as interactive `meas`
 //   commands against the plot of their own analysis: in a deck, ngspice 47 evaluates them only
 //   for the last analysis that ran.
@@ -43,7 +44,7 @@ const UNITS: Record<number, SimUnit> = { 1: "s", 2: "Hz", 3: "V", 4: "A" };
 const VF_COMPLEX = 2;
 const SCALES = new Set(["time", "frequency", "v-sweep", "i-sweep"]);
 
-// Log lines -> status (first match wins). Kept in step with STATUS_PATTERNS in ngspice_batch.py.
+// Log lines -> status (first match wins). Kept in step with STATUS_PATTERNS in sim_runner/ngspice_batch.py.
 const STATUS_PATTERNS: [RegExp, SimStatus][] = [
   [/singular matrix/i, "singular_matrix"],
   [/timestep too small/i, "no_convergence"],

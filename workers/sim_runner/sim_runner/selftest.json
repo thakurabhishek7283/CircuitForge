@@ -1,0 +1,15 @@
+{
+ "registry_version": "2025.09.0",
+ "hash": "47ad24c66a5c8a012f2ff38907a150e113e147c8fba511a588163bb9d2ed1f45",
+ "includes": [
+  "models/tl072.lib"
+ ],
+ "netlist": "* circuit-tutor netlist\n.include models/tl072.lib\nC1 b1_n_a b1_out 8.2e-7\nC2 b1_n_b 0 8.2e-7\nR1 b1_in b1_n_a 1.2e4\nR2 b1_n_a b1_n_b 1.3e4\nR3 b1_out 0 1e4\nXU1_A b1_n_b b1_out vcc vee b1_out TL072\nV1 b1_in 0 DC 0e0 AC 1e0 SIN(0e0 1e0 1e1)\nVrail_vcc vcc 0 DC 1.5e1\nVrail_vee vee 0 DC -1.35e1\n.options reltol=1e-3 gmin=1e-12\n.save all @c1[i] @c2[i] @r1[i] @r2[i] @r3[i]\n.op\n.tran 5e-4 5e-1\n.ac dec 50 1e-1 1e3\n.meas ac b1_fc_hz_ref find vdb(b1_out) at=1e0\n.meas ac b1_fc_hz_x when vdb(b1_out)=b1_fc_hz_ref-3 fall=1\n.meas ac b1_q_f0 when vp(b1_out)=-1.5707963267948966e0 fall=1\n.meas ac b1_q_ref find vdb(b1_out) at=b1_q_f0/10\n.meas ac b1_q_g0 find vdb(b1_out) at=b1_q_f0\n.end\n",
+ "meas": {
+  "b1_fc_hz_ref": -0.0360546,
+  "b1_fc_hz_x": 10.0401,
+  "b1_q_f0": 15.5436,
+  "b1_q_ref": -0.0868331,
+  "b1_q_g0": -6.0298
+ }
+}

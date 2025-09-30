@@ -19,7 +19,7 @@ import circuit_core as cc
 import pytest
 
 from circuits import Bench
-from ngspice_batch import REGISTRY_DIR, REPO, simulate
+from sim_runner.ngspice_batch import REGISTRY_DIR, REPO, simulate
 
 WASM = REPO / "third_party" / "ngspice" / "dist" / "wasm" / "ngspice.mjs"
 NODE = shutil.which("node")

@@ -4,7 +4,7 @@ import pytest
 from pytest import approx
 
 from circuits import Bench, ac, op, tran
-from ngspice_batch import canonical_name, classify, simulate, split_deck
+from sim_runner.ngspice_batch import canonical_name, classify, simulate, split_deck
 
 
 def rc(reg) -> Bench:

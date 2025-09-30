@@ -1,0 +1,12 @@
+# Build context is the repository root; the image needs only these.
+*
+!third_party/ngspice/pin.env
+!third_party/ngspice/fetch.sh
+!third_party/ngspice/build-native.sh
+!third_party/ngspice/patches
+!registry/manifest.yaml
+!registry/models
+!workers/sim_runner
+workers/sim_runner/tests
+**/__pycache__
+**/*.egg-info

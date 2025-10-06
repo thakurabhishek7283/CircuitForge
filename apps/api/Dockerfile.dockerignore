@@ -1,0 +1,18 @@
+# Build context is the repository root; the image needs only these.
+*
+!Cargo.toml
+!Cargo.lock
+!crates
+crates/*/pkg
+crates/*/pkg-*
+crates/**/target
+!registry
+!workers/sim_runner
+workers/sim_runner/tests
+!apps/api
+apps/api/tests
+**/__pycache__
+**/*.pyd
+**/*.so
+**/*.pdb
+**/*.egg-info

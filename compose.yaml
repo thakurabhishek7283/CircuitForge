@@ -1,17 +1,64 @@
-# Local stack (LLD §2 deployables): `docker compose up -d --build`.
+# Local stack (LLD §2 deployables): `docker compose up -d --build`, then the API is on :8000.
+# Needs AUTH_TOKEN_SECRET (and optionally POSTGRES_PASSWORD) in .env or the shell. Published ports
+# are loopback only: these services have development credentials.
 # The simulation worker sits on an internal network with Redis only: no route out (LLD §8, §14).
 name: circuit-forge
 
+x-api: &api
+  build:
+    context: .
+    dockerfile: apps/api/Dockerfile
+  image: ${API_IMAGE:-circuit-forge/api:dev}
+  environment: &api-env
+    DATABASE_URL: postgresql+asyncpg://tutor:${POSTGRES_PASSWORD:-tutor}@postgres:5432/tutor
+    REDIS_URL: redis://redis:6379/0
+  read_only: true
+  tmpfs: ["/tmp"]
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: tutor
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tutor}
+      POSTGRES_DB: tutor
+    ports: ["127.0.0.1:5432:5432", "[::1]:5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "tutor", "-d", "tutor"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   redis:
     image: redis:7-alpine
-    ports: ["127.0.0.1:6379:6379", "[::1]:6379:6379"]  # loopback only: Redis has no password here
+    ports: ["127.0.0.1:6379:6379", "[::1]:6379:6379"]
     networks: [default, sim]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
+
+  migrate:
+    <<: *api
+    command: ["python", "-m", "tutor_api.db.migrate"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    <<: *api
+    environment:
+      <<: *api-env
+      AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:?set AUTH_TOKEN_SECRET in .env (a random string of 32+ characters)}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+    ports: ["127.0.0.1:8000:8000", "[::1]:8000:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
 
   sim_runner:
     build:
@@ -32,3 +79,6 @@ services:
 networks:
   sim:
     internal: true
+
+volumes:
+  pgdata:

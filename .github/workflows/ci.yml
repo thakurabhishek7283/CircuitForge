@@ -48,7 +48,7 @@ jobs:
       - name: Python env
         run: |
           uv venv --python 3.12 .venv
-          uv pip install --python .venv maturin pytest "pydantic>=2.9,<3" -e "workers/sim_runner[test]"
+          uv pip install --python .venv maturin pytest "pydantic>=2.9,<3" -e "workers/sim_runner[test]" -e "apps/api[test]"
           echo "PYO3_PYTHON=$PWD/.venv/bin/python" >> "$GITHUB_ENV"
 
       - name: Format
@@ -90,6 +90,11 @@ jobs:
           REQUIRE_NGSPICE: "1"
           REQUIRE_DOCKER: "1"
         run: .venv/bin/python -m pytest -q workers/sim_runner/tests
+      # The API on Postgres 16 + pgvector and Redis 7 (testcontainers), served by uvicorn.
+      - name: API (projects, op log, jobs, SSE stream, reaper, tenancy)
+        env:
+          REQUIRE_DOCKER: "1"
+        run: .venv/bin/python -m pytest -q apps/api/tests
       - name: circuit-core browser build (@tutor/core for Vite)
         run: node crates/circuit-core-wasm/build.mjs
       # Store, layout, schematic and sim worker against the real core, registry bundle and
@@ -126,13 +131,18 @@ jobs:
           path: apps/web/dist
           retention-days: 7
 
-  sim-runner-image:
-    name: sim_runner image (ngspice from source, sandboxed selftest, worker health)
+  images:
+    name: images (sim_runner, api) and the local stack
     runs-on: ubuntu-latest
+    env:
+      SIM_RUNNER_IMAGE: circuit-forge/sim-runner:ci
+      API_IMAGE: circuit-forge/api:ci
+      AUTH_TOKEN_SECRET: ci-only-secret-0123456789abcdefghijklmnopqrstuvwxyz
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v4
-      - uses: docker/build-push-action@v7
+      - name: sim_runner image (ngspice from the pinned source)
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: workers/sim_runner/Dockerfile
@@ -141,14 +151,27 @@ jobs:
           push: false
           cache-from: type=gha,scope=sim-runner
           cache-to: type=gha,mode=max,scope=sim-runner
-      - name: Selftest under the production sandbox (read-only, no network, tmpfs, no capabilities)
+      - name: api image (circuit-core wheel built with maturin)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          tags: circuit-forge/api:ci
+          load: true
+          push: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+      - name: sim_runner selftest under the production sandbox (read-only, no network, tmpfs, no capabilities)
         run: >-
           docker run --rm --read-only --network none --tmpfs /tmp:size=512m,mode=1777
           --cap-drop ALL --security-opt no-new-privileges
           circuit-forge/sim-runner:ci python -m sim_runner.selftest
-      - name: Worker starts on the internal network and reports healthy
-        env:
-          SIM_RUNNER_IMAGE: circuit-forge/sim-runner:ci
-        run: docker compose up -d --no-build --wait --wait-timeout 120 redis sim_runner
+      - name: Stack starts (Postgres, Redis, migrations, API, worker) and the API answers
+        run: |
+          docker compose up -d --no-build --wait --wait-timeout 180 api sim_runner
+          token=$(curl -sf -X POST http://127.0.0.1:8000/v1/auth/anonymous | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          project=$(curl -sf -X POST -H "Authorization: Bearer $token" http://127.0.0.1:8000/v1/projects | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          curl -sf -H "Authorization: Bearer $token" "http://127.0.0.1:8000/v1/projects/$project" | python3 -c 'import json,sys; s=json.load(sys.stdin); assert s["circuit"]["rev"] == 0, s'
+          curl -sf http://127.0.0.1:8000/readyz
       - if: always()
-        run: docker compose logs && docker compose down
+        run: docker compose logs && docker compose down -v

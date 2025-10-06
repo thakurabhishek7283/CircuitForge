@@ -1,0 +1,32 @@
+[project]
+name = "tutor-api"
+version = "0.1.0"
+description = "Circuit Forge API: projects, op log, generation jobs and their event stream (LLD §5, §6, §11)"
+requires-python = ">=3.12"
+# Also needs `circuit_core` (crates/circuit-core-py, built with maturin) and `sim-runner`
+# (workers/sim_runner), installed from the repository.
+dependencies = [
+    "fastapi==0.142.2",
+    "uvicorn==0.54.0",
+    "sqlalchemy[asyncio]==2.1.2",
+    "asyncpg==0.31.0",
+    "alembic==1.20.0",
+    "pyjwt==2.15.1",
+    "redis>=5,<6",  # arq 0.28 (sim_runner) pins redis-py < 6
+    "pydantic>=2.9,<3",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=1.4", "testcontainers>=4.15", "httpx==0.28.1"]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["tutor_api"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"

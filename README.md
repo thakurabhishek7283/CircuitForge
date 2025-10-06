@@ -14,6 +14,7 @@ Spec: [docs/LLD.md](docs/LLD.md).
 | `registry` | Parts (YAML), schematic symbols (SVG), SPICE models, block templates (YAML), bundle manifest |
 | `third_party/ngspice` | The pinned ngspice: native and WASM build scripts, patches, licence notes |
 | `apps/web` | Vite + React editor: store mirroring the WASM core, edit tools, ELK layout worker, SVG schematic with canvas overlays, scope, ngspice WASM sim worker |
+| `apps/api` | FastAPI service: anonymous sessions, projects and their op log (Postgres), generation jobs streamed over SSE from Redis Streams, the reaper; its image and migrations |
 | `workers/sim_runner` | Simulation worker (arq): circuit-core netlists on the pinned native ngspice under rlimits, results cached in Redis; the native ngspice driver; its image |
 | `tools/sim` | Simulation tests for every part, every block template and the demo circuit; native vs WASM parity |
 | `tools/parity` | Cross-runtime parity gate: native vs WASM vs Python |
@@ -27,7 +28,7 @@ ngspice WASM build (it runs in the pinned emsdk image; no local Emscripten neede
 ```sh
 rustup target add wasm32-unknown-unknown
 cargo install --locked wasm-pack
-uv venv --python 3.12 .venv && uv pip install --python .venv maturin pytest "pydantic>=2.9,<3" -e "workers/sim_runner[test]"
+uv venv --python 3.12 .venv && uv pip install --python .venv maturin pytest "pydantic>=2.9,<3" -e "workers/sim_runner[test]" -e "apps/api[test]"
 uv pip install --python .venv py7zr                   # Windows only: unpacks the official ngspice build
 export PYO3_PYTHON="$PWD/.venv/Scripts/python.exe"   # Windows; .venv/bin/python elsewhere
 third_party/ngspice/build-native.sh                  # native ngspice (tests, sim_runner)
@@ -46,7 +47,8 @@ node crates/circuit-core-wasm/build.mjs    # browser package in crates/circuit-c
 cargo run -p circuit-core --example bundle_registry   # registry bundle (JSON, symbols.svg, model files) in target/registry
 .venv/Scripts/python -m pytest -q tools/sim           # every part + every template at 5 points + demo + native vs WASM parity
 .venv/Scripts/python -m pytest -q workers/sim_runner/tests   # the worker on Redis 7 (Docker) and native ngspice
-docker compose up -d --build                         # Redis + sim_runner (worker on an internal network)
+.venv/Scripts/python -m pytest -q apps/api/tests     # the API on Postgres 16 + pgvector and Redis 7 (Docker)
+docker compose up -d --build                         # Postgres, Redis, migrations, API on :8000, sim_runner
 (cd apps/web && npx vitest run && npx tsc --noEmit)   # store, layout, schematic, sim worker; end to end on ngspice.wasm
 (cd apps/web && npm run dev)                          # editor on the demo circuit at http://localhost:5173
 (cd apps/web && npm run build)                        # static bundle in apps/web/dist (app + ngspice + registry)
@@ -60,7 +62,12 @@ left out of `dist/`. `/#new` opens an empty circuit. In development the open edi
 
 The simulation tests use the bindings and registry bundle that `tools/parity/run.sh` builds. They skip
 when ngspice is not built; CI sets `REQUIRE_NGSPICE=1` so they cannot skip there. The worker tests also skip
-without Docker (CI sets `REQUIRE_DOCKER=1`).
+without Docker (CI sets `REQUIRE_DOCKER=1`), and so do the API tests.
+
+`docker compose` needs `AUTH_TOKEN_SECRET` (32+ random characters) in `.env`; its Postgres uses
+`POSTGRES_PASSWORD` (default `tutor`), so a `DATABASE_URL` for tools on the host should use the same
+password. The API runs the latest migrations through the one-shot `migrate` service
+(`python -m tutor_api.db.migrate`).
 
 After changing a wire type: `tools/codegen/run.sh`, then commit the regenerated files.
 After a deliberate netlist change: `cargo insta review` (or `INSTA_UPDATE=always cargo test`) and review the diff.

@@ -129,11 +129,23 @@ async def test_refused_requests_are_not_simulated_or_cached(pool, runs, reg, ver
 
 async def test_a_timeout_is_reported_and_not_cached(pool, runs, reg, version):
     n = bench(reg, "rc_lowpass", 0)
-    text = re.sub(r"(?m)^\.tran .*$", ".tran 1e-8 0.09", n["text"])  # 9M steps
+    # 900k steps: seconds of CPU, but within RLIMIT_AS (ngspice allocates every vector for all
+    # stop/step points up front; see the next test).
+    text = re.sub(r"(?m)^\.tran .*$", ".tran 1e-7 0.09", n["text"])
     req = request(rehash(n, text), version, timeout_s=0.5)
     r = await client.simulate(pool, req)
     assert r.status == "timeout" and not r.cached
     assert await pool.get(cache_key(version, req.hash)) is None
+
+
+@pytest.mark.skipif(os.name == "nt", reason="rlimits are POSIX")
+async def test_a_run_over_the_memory_limit_fails_at_once(pool, reg, version):
+    """9M transient points need about 72 MB per vector: under RLIMIT_AS ngspice's malloc fails
+    within milliseconds, an `error` that names the cause, instead of running into the timeout."""
+    n = bench(reg, "rc_lowpass", 0)
+    text = re.sub(r"(?m)^\.tran .*$", ".tran 1e-8 0.09", n["text"])
+    r = await client.simulate(pool, request(rehash(n, text), version, timeout_s=0.5))
+    assert r.status == "error" and "Not enough memory" in r.log and r.ms < 400, (r.ms, r.log[-500:])
 
 
 async def test_no_worker_is_a_timeout(redis_url, reg, version):

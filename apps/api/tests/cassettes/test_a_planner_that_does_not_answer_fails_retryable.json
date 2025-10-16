@@ -1,0 +1,38 @@
+{
+ "version": 1,
+ "interactions": [
+  {
+   "key": "c3f67bce94ee7f4b5ef0a2f245c4807f5667f198254b2f9d692fcfc6a264dfe1",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": " target \"b2.in\". An input port takes at most one link. Power and ground ports join through the shared rails by themselves; never link them.\n- uncovered: whatever the request needs that no template can build (a microcontroller, mains power, a motor driver). Empty when the templates cover everything.\n",
+   "error": {
+    "code": "rate_limited",
+    "message": "quota",
+    "retryable": true
+   }
+  },
+  {
+   "key": "c3f67bce94ee7f4b5ef0a2f245c4807f5667f198254b2f9d692fcfc6a264dfe1",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": " target \"b2.in\". An input port takes at most one link. Power and ground ports join through the shared rails by themselves; never link them.\n- uncovered: whatever the request needs that no template can build (a microcontroller, mains power, a motor driver). Empty when the templates cover everything.\n",
+   "error": {
+    "code": "rate_limited",
+    "message": "quota",
+    "retryable": true
+   }
+  },
+  {
+   "key": "c3f67bce94ee7f4b5ef0a2f245c4807f5667f198254b2f9d692fcfc6a264dfe1",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": " target \"b2.in\". An input port takes at most one link. Power and ground ports join through the shared rails by themselves; never link them.\n- uncovered: whatever the request needs that no template can build (a microcontroller, mains power, a motor driver). Empty when the templates cover everything.\n",
+   "error": {
+    "code": "rate_limited",
+    "message": "quota",
+    "retryable": true
+   }
+  }
+ ]
+}

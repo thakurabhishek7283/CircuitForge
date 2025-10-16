@@ -1,0 +1,12 @@
+Student level: {{ level }}.
+The student asked for:
+<<<
+{{ prompt }}
+>>>
+
+The planned circuit, in signal order:
+{% for b in plan %}
+- {{ b.title }} ({{ b.template }}): {{ b.purpose }} It teaches: {{ b.teach }}
+{% endfor %}
+
+Write two to four short sentences for a {{ level }} student that introduce this circuit and follow the signal through its blocks.

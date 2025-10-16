@@ -1,0 +1,107 @@
+{
+ "version": 1,
+ "interactions": [
+  {
+   "key": "413e1ed3f7c1924fb8c4a319b7666b86a7868fab92973f034ecd02c1e8ec7fcb",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": " target \"b2.in\". An input port takes at most one link. Power and ground ports join through the shared rails by themselves; never link them.\n- uncovered: whatever the request needs that no template can build (a microcontroller, mains power, a motor driver). Empty when the templates cover everything.\n",
+   "response": {
+    "text": "{\"blocks\": [{\"id\": \"b1\", \"template\": \"sine_source\", \"title\": \"Signal\", \"purpose\": \"A test signal.\", \"targets\": [{\"name\": \"freq_hz\", \"value\": \"300\"}]}, {\"id\": \"b2\", \"template\": \"rc_lowpass\", \"title\": \"Filter\", \"purpose\": \"The filter.\", \"targets\": [{\"name\": \"fc_hz\", \"value\": \"500k\"}]}], \"links\": [{\"source\": \"b1.out\", \"target\": \"b2.gnd\"}], \"uncovered\": []}",
+    "model": "fake-large",
+    "usage": {
+     "in_tokens": 3601,
+     "out_tokens": 88,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  },
+  {
+   "key": "aad37090bfa4efb26064a55ecd013b2fe9d50af4a7e763943d8f0cc84581d3b8",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": "itle\": \"Filter\", \"purpose\": \"The filter.\", \"targets\": [{\"name\": \"fc_hz\", \"value\": \"500k\"}]}], \"links\": [{\"source\": \"b1.out\", \"target\": \"b2.gnd\"}], \"uncovered\": []}\n\nIt has these problems. Fix every one:\n- link b1.out -> b2.gnd: b2.gnd is ground, not an input; power and ground join through the rails\n",
+   "response": {
+    "text": "{\"blocks\": [{\"id\": \"b1\", \"template\": \"sine_source\", \"title\": \"Signal\", \"purpose\": \"V1 makes a 300 Hz sine wave to test the filter with.\", \"targets\": [{\"name\": \"freq_hz\", \"value\": \"300\"}]}, {\"id\": \"b2\", \"template\": \"rc_lowpass\", \"title\": \"Filter\", \"purpose\": \"R1 and C1 let low frequencies through and send high ones to ground.\", \"targets\": [{\"name\": \"fc_hz\", \"value\": \"2k\"}]}], \"links\": [{\"source\": \"b1.out\", \"target\": \"b2.in\"}], \"uncovered\": []}",
+    "model": "fake-large",
+    "usage": {
+     "in_tokens": 3730,
+     "out_tokens": 111,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  },
+  {
+   "key": "dc4a8106566656fd35f79fd82b718850512036fb227dfdc156b78d7f280c7060",
+   "kind": "compose",
+   "tier": "large",
+   "user_tail": "umber: R1, C2, U1), the part id, and a value for each of its params (name and value).\n- nets: a net named after a port of the template (out, gnd) is that port; any other name is a net inside the block. Pins are REF.PIN, such as R1.2 or U1.OUT_A. Every port needs a net, and a pin is on one net only.\n",
+   "response": {
+    "text": "{\"use_template\": true, \"parts\": [], \"nets\": []}",
+    "model": "fake-large",
+    "usage": {
+     "in_tokens": 3733,
+     "out_tokens": 11,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  },
+  {
+   "key": "f937f202f554f2b6c622b6653c9ca2ae7efbf5515da085bd95c9ef7927d90853",
+   "kind": "narrate",
+   "tier": "small",
+   "user_tail": "let low frequencies through and send high ones to ground. It teaches: C shorts high frequencies to ground through R: above fc = 1/(2πRC) the output falls 20 dB per decade.\n\nWrite two to four short sentences for a beginner student that introduce this circuit and follow the signal through its blocks.\n",
+   "chunks": [
+    "This ",
+    "circuit ",
+    "is ",
+    "a ",
+    "low-pass ",
+    "filter. ",
+    "The ",
+    "signal ",
+    "enters ",
+    "a ",
+    "resistor, ",
+    "and ",
+    "a ",
+    "capacitor ",
+    "shunts ",
+    "the ",
+    "fast ",
+    "parts ",
+    "to ",
+    "ground."
+   ],
+   "response": {
+    "text": "This circuit is a low-pass filter. The signal enters a resistor, and a capacitor shunts the fast parts to ground.",
+    "model": "fake-small",
+    "usage": {
+     "in_tokens": 312,
+     "out_tokens": 28,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  },
+  {
+   "key": "450e735db9861e9345f4d3e38420fb09b83b969fa55c9ccfa7722b3af45f92ce",
+   "kind": "compose",
+   "tier": "large",
+   "user_tail": "r: R1, C2, U1), the part id, and a value for each of its params (name and value).\n- nets: a net named after a port of the template (in, out, gnd) is that port; any other name is a net inside the block. Pins are REF.PIN, such as R1.2 or U1.OUT_A. Every port needs a net, and a pin is on one net only.\n",
+   "response": {
+    "text": "{\"use_template\": false, \"parts\": [{\"ref\": \"R1\", \"part\": \"resistor_th\", \"params\": [{\"name\": \"resistance\", \"value\": \"8.2k\"}]}, {\"ref\": \"C1\", \"part\": \"cap_film\", \"params\": [{\"name\": \"capacitance\", \"value\": \"10n\"}]}], \"nets\": [{\"name\": \"in\", \"pins\": [\"R1.1\"]}, {\"name\": \"out\", \"pins\": [\"R1.2\", \"C1.1\"]}, {\"name\": \"gnd\", \"pins\": [\"C1.2\"]}]}",
+    "model": "fake-large",
+    "usage": {
+     "in_tokens": 3760,
+     "out_tokens": 83,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  }
+ ]
+}

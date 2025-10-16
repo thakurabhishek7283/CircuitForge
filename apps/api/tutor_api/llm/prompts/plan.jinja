@@ -1,0 +1,26 @@
+Step: plan.
+Student level: {{ level }}.
+{% if circuit %}
+The circuit already holds the following; new blocks are added to it and share its rails:
+{{ circuit }}
+{% endif %}
+The student's request, between the markers:
+<<<
+{{ prompt }}
+>>>
+
+Plan the circuit as blocks:
+- At most 8 blocks. Each has a plan id (b1, b2, ...), the template it is built on, a short title, and one sentence (purpose) telling a {{ level }} student what the block does in this circuit.
+- targets: only names the template lists, with values inside their ranges ("2k" for 2 kHz). Leave a target out to take its default.
+- links: each joins an output port to an input port, written as source "b1.out" and target "b2.in". An input port takes at most one link. Power and ground ports join through the shared rails by themselves; never link them.
+- uncovered: whatever the request needs that no template can build (a microcontroller, mains power, a motor driver). Empty when the templates cover everything.
+{% if previous %}
+
+Your previous plan:
+{{ previous }}
+
+It has these problems. Fix every one:
+{% for p in problems %}
+- {{ p }}
+{% endfor %}
+{% endif %}

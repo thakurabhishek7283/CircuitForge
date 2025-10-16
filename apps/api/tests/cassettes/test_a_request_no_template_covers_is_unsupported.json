@@ -1,0 +1,53 @@
+{
+ "version": 1,
+ "interactions": [
+  {
+   "key": "c5067311489c33bf88006def3b74c0f2d7eb58da0bcfe393060e98cde25dc402",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": " target \"b2.in\". An input port takes at most one link. Power and ground ports join through the shared rails by themselves; never link them.\n- uncovered: whatever the request needs that no template can build (a microcontroller, mains power, a motor driver). Empty when the templates cover everything.\n",
+   "response": {
+    "text": "{\"blocks\": [], \"links\": [], \"uncovered\": [\"a microcontroller that reads the temperature\"]}",
+    "model": "fake-large",
+    "usage": {
+     "in_tokens": 3596,
+     "out_tokens": 22,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  },
+  {
+   "key": "b893b29daf58d5f9ed98411de105e22e894f64dbc2685a4a0832f13953d43c9e",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": "es cover everything.\n\nYour previous plan:\n{\"blocks\": [], \"links\": [], \"uncovered\": [\"a microcontroller that reads the temperature\"]}\n\nIt has these problems. Fix every one:\n- no template builds 'a microcontroller that reads the temperature': leave it out of the request, or plan it from the templates\n",
+   "response": {
+    "text": "{\"blocks\": [], \"links\": [], \"uncovered\": [\"a microcontroller that reads the temperature\"]}",
+    "model": "fake-large",
+    "usage": {
+     "in_tokens": 3665,
+     "out_tokens": 22,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  },
+  {
+   "key": "b893b29daf58d5f9ed98411de105e22e894f64dbc2685a4a0832f13953d43c9e",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": "es cover everything.\n\nYour previous plan:\n{\"blocks\": [], \"links\": [], \"uncovered\": [\"a microcontroller that reads the temperature\"]}\n\nIt has these problems. Fix every one:\n- no template builds 'a microcontroller that reads the temperature': leave it out of the request, or plan it from the templates\n",
+   "response": {
+    "text": "{\"blocks\": [], \"links\": [], \"uncovered\": [\"a microcontroller that reads the temperature\"]}",
+    "model": "fake-large",
+    "usage": {
+     "in_tokens": 3665,
+     "out_tokens": 22,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  }
+ ]
+}

@@ -1,0 +1,92 @@
+{
+ "version": 1,
+ "interactions": [
+  {
+   "key": "c3f67bce94ee7f4b5ef0a2f245c4807f5667f198254b2f9d692fcfc6a264dfe1",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": " target \"b2.in\". An input port takes at most one link. Power and ground ports join through the shared rails by themselves; never link them.\n- uncovered: whatever the request needs that no template can build (a microcontroller, mains power, a motor driver). Empty when the templates cover everything.\n",
+   "response": {
+    "text": "{\"blocks\": [{\"id\": \"b1\", \"template\": \"rc_lowpass\", \"title\": \"Low-pass filter\", \"purpose\": \"R1 and C1 let low frequencies through and send high ones to ground.\", \"targets\": [{\"name\": \"fc_hz\", \"value\": \"2k\"}]}], \"links\": [], \"uncovered\": []}",
+    "model": "fake-large",
+    "usage": {
+     "in_tokens": 3598,
+     "out_tokens": 59,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  },
+  {
+   "key": "3f73fbd42b59d7244e69e74a08068a52270c1cb3729d833092d3d892460fbf3f",
+   "kind": "compose",
+   "tier": "large",
+   "user_tail": "r: R1, C2, U1), the part id, and a value for each of its params (name and value).\n- nets: a net named after a port of the template (in, out, gnd) is that port; any other name is a net inside the block. Pins are REF.PIN, such as R1.2 or U1.OUT_A. Every port needs a net, and a pin is on one net only.\n",
+   "error": {
+    "code": "server_error",
+    "message": "no answer",
+    "retryable": true
+   }
+  },
+  {
+   "key": "3f73fbd42b59d7244e69e74a08068a52270c1cb3729d833092d3d892460fbf3f",
+   "kind": "compose",
+   "tier": "large",
+   "user_tail": "r: R1, C2, U1), the part id, and a value for each of its params (name and value).\n- nets: a net named after a port of the template (in, out, gnd) is that port; any other name is a net inside the block. Pins are REF.PIN, such as R1.2 or U1.OUT_A. Every port needs a net, and a pin is on one net only.\n",
+   "error": {
+    "code": "server_error",
+    "message": "no answer",
+    "retryable": true
+   }
+  },
+  {
+   "key": "3f73fbd42b59d7244e69e74a08068a52270c1cb3729d833092d3d892460fbf3f",
+   "kind": "compose",
+   "tier": "large",
+   "user_tail": "r: R1, C2, U1), the part id, and a value for each of its params (name and value).\n- nets: a net named after a port of the template (in, out, gnd) is that port; any other name is a net inside the block. Pins are REF.PIN, such as R1.2 or U1.OUT_A. Every port needs a net, and a pin is on one net only.\n",
+   "error": {
+    "code": "server_error",
+    "message": "no answer",
+    "retryable": true
+   }
+  },
+  {
+   "key": "cede195da7151ff969c17d8f232c4b387945f4561f6e39dc9c832cb758176309",
+   "kind": "narrate",
+   "tier": "small",
+   "user_tail": "let low frequencies through and send high ones to ground. It teaches: C shorts high frequencies to ground through R: above fc = 1/(2πRC) the output falls 20 dB per decade.\n\nWrite two to four short sentences for a beginner student that introduce this circuit and follow the signal through its blocks.\n",
+   "chunks": [
+    "This ",
+    "circuit ",
+    "is ",
+    "a ",
+    "low-pass ",
+    "filter. ",
+    "The ",
+    "signal ",
+    "enters ",
+    "a ",
+    "resistor, ",
+    "and ",
+    "a ",
+    "capacitor ",
+    "shunts ",
+    "the ",
+    "fast ",
+    "parts ",
+    "to ",
+    "ground."
+   ],
+   "response": {
+    "text": "This circuit is a low-pass filter. The signal enters a resistor, and a capacitor shunts the fast parts to ground.",
+    "model": "fake-small",
+    "usage": {
+     "in_tokens": 260,
+     "out_tokens": 28,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  }
+ ]
+}

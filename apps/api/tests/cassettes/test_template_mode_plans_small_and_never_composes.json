@@ -1,0 +1,33 @@
+{
+ "version": 1,
+ "interactions": [
+  {
+   "key": "17b9c71f52ebb80d09f8a9f6ff4715f65244cdbea437de2e5fe7d65d0a399349",
+   "kind": "plan",
+   "tier": "small",
+   "user_tail": " target \"b2.in\". An input port takes at most one link. Power and ground ports join through the shared rails by themselves; never link them.\n- uncovered: whatever the request needs that no template can build (a microcontroller, mains power, a motor driver). Empty when the templates cover everything.\n",
+   "response": {
+    "text": "{\"blocks\": [{\"id\": \"b1\", \"template\": \"rc_lowpass\", \"title\": \"Low-pass filter\", \"purpose\": \"R1 and C1 let low frequencies through and send high ones to ground.\", \"targets\": [{\"name\": \"fc_hz\", \"value\": \"2k\"}]}], \"links\": [], \"uncovered\": []}",
+    "model": "fake-small",
+    "usage": {
+     "in_tokens": 3598,
+     "out_tokens": 59,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  },
+  {
+   "key": "cede195da7151ff969c17d8f232c4b387945f4561f6e39dc9c832cb758176309",
+   "kind": "narrate",
+   "tier": "small",
+   "user_tail": "let low frequencies through and send high ones to ground. It teaches: C shorts high frequencies to ground through R: above fc = 1/(2πRC) the output falls 20 dB per decade.\n\nWrite two to four short sentences for a beginner student that introduce this circuit and follow the signal through its blocks.\n",
+   "chunks": [],
+   "error": {
+    "code": "auth",
+    "message": "bad key",
+    "retryable": false
+   }
+  }
+ ]
+}

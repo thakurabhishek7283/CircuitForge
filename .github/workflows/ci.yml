@@ -90,10 +90,12 @@ jobs:
           REQUIRE_NGSPICE: "1"
           REQUIRE_DOCKER: "1"
         run: .venv/bin/python -m pytest -q workers/sim_runner/tests
-      # The API on Postgres 16 + pgvector and Redis 7 (testcontainers), served by uvicorn.
-      - name: API (projects, op log, jobs, SSE stream, reaper, tenancy)
+      # The API on Postgres 16 + pgvector and Redis 7 (testcontainers), served by uvicorn; the
+      # orchestrator's jobs replay recorded model replies and simulate on the sim_runner worker.
+      - name: API (projects, op log, jobs, SSE stream, reaper, tenancy, orchestrator)
         env:
           REQUIRE_DOCKER: "1"
+          REQUIRE_NGSPICE: "1"
         run: .venv/bin/python -m pytest -q apps/api/tests
       - name: circuit-core browser build (@tutor/core for Vite)
         run: node crates/circuit-core-wasm/build.mjs

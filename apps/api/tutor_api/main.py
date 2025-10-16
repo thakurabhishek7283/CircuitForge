@@ -18,12 +18,19 @@ from .config import Settings
 from .jobs import reaper
 from .jobs.events import EventLog
 from .jobs.runner import JobRunner, Orchestrator
+from .llm.config import gateway_from_env
+from .orchestrator import Orchestrator as GenerationOrchestrator
 from .projects import Registries
 from .routers import auth, jobs, projects
 
 
 def create_app(settings: Settings | None = None, orchestrator: Orchestrator | None = None) -> FastAPI:
-    settings = settings or Settings.from_env()
+    """With no arguments (the server): settings and the orchestrator's LLM provider from the
+    environment; without `LLM_PROVIDER`, generation is unavailable (503)."""
+    if settings is None:
+        settings = Settings.from_env()
+        if orchestrator is None and (gateway := gateway_from_env()) is not None:
+            orchestrator = GenerationOrchestrator(gateway)
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

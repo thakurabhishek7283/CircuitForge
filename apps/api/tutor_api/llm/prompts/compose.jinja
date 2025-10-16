@@ -1,0 +1,37 @@
+Step: compose block {{ block.id }}, "{{ block.title }}".
+The student asked for:
+<<<
+{{ prompt }}
+>>>
+
+The plan:
+{% for b in plan %}
+- {{ b.id }} {{ b.template }}: {{ b.title }}. {{ b.purpose }}
+{% endfor %}
+
+This block is built on template {{ block.template }}.
+Targets: {{ targets }}.
+Its ports connect to: {{ ports }}.
+The template's reference design at these targets: {{ reference }}.
+It is simulated in the template's test bench and must pass: {{ checks }}.
+
+The circuit so far:
+{{ circuit or "(empty)" }}
+
+Parts you may use: {{ candidates }}.
+
+Either keep the template (use_template true, parts and nets empty) or draft the block (use_template false). Keep the template when it already does what the student asked. Draft when the request needs what the template does not give as it is: another part, an added part, other values.
+A draft:
+- parts: your own refs (the part's refdes letter and a number: R1, C2, U1), the part id, and a value for each of its params (name and value).
+- nets: a net named after a port of the template ({{ port_names }}) is that port; any other name is a net inside the block. Pins are REF.PIN, such as R1.2 or U1.OUT_A. Every port needs a net, and a pin is on one net only.
+{% if last %}
+
+Your previous attempt:
+{{ last.output }}
+
+It failed:
+{% for p in last.problems %}
+- {{ p }}
+{% endfor %}
+Fix every problem and keep what was right.
+{% endif %}

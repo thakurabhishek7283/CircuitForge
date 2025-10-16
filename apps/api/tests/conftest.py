@@ -32,14 +32,28 @@ def docker_available() -> bool:
         return False
 
 
+def ngspice_available() -> bool:
+    from sim_runner import ngspice_batch
+
+    return ngspice_batch.ngspice_path() is not None
+
+
 def pytest_collection_modifyitems(config, items):
-    if docker_available():
-        return
-    msg = "Docker is not running (testcontainers Postgres and Redis)"
-    if os.environ.get("REQUIRE_DOCKER"):
-        raise pytest.UsageError(msg)
-    for item in items:
-        item.add_marker(pytest.mark.skip(reason=msg))
+    """Skip what needs Docker (the databases) or ngspice (the sim worker) when they are missing;
+    with REQUIRE_DOCKER / REQUIRE_NGSPICE set (CI), fail instead."""
+    needs = [
+        ({"database_url", "redis_url"}, docker_available, "REQUIRE_DOCKER",
+         "Docker is not running (testcontainers Postgres and Redis)"),
+        ({"sim_worker"}, ngspice_available, "REQUIRE_NGSPICE", "ngspice not built: run third_party/ngspice/build-native.sh"),
+    ]
+    for fixtures, available, env, msg in needs:
+        users = [i for i in items if fixtures & set(i.fixturenames)]
+        if not users or available():
+            continue
+        if os.environ.get(env):
+            raise pytest.UsageError(msg)
+        for item in users:
+            item.add_marker(pytest.mark.skip(reason=msg))
 
 
 @pytest.fixture(scope="session")
@@ -71,6 +85,31 @@ def redis_url() -> str:
     ready = LogMessageWaitStrategy("Ready to accept connections").with_startup_timeout(60)
     with DockerContainer("redis:7-alpine").with_exposed_ports(6379).waiting_for(ready) as c:
         yield f"redis://{c.get_container_host_ip()}:{c.get_exposed_port(6379)}/0"
+
+
+@pytest.fixture(scope="session")
+async def sim_worker(redis_url) -> AsyncIterator[None]:
+    """The sim_runner worker consuming the test Redis's queue in this event loop, as in
+    workers/sim_runner/tests: the orchestrator's benches run on the native ngspice."""
+    from arq.worker import Worker
+    from sim_runner import client as sim_client
+    from sim_runner import worker as w
+
+    redis = await sim_client.connect(redis_url)
+    s = w.WorkerSettings
+    worker = Worker(
+        functions=s.functions, queue_name=s.queue_name, redis_pool=redis, max_jobs=4, keep_result=s.keep_result,
+        poll_delay=s.poll_delay, job_serializer=s.job_serializer, job_deserializer=s.job_deserializer,
+        on_startup=s.on_startup, handle_signals=False,
+    )
+    main = asyncio.create_task(worker.async_run())
+    yield
+    # Worker.close() signals itself with SIGUSR1, which Windows lacks.
+    tasks = [main, *worker.tasks.values()]
+    for t in tasks:
+        t.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+    await redis.aclose()
 
 
 @pytest.fixture(scope="session")

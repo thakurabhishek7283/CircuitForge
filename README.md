@@ -14,7 +14,7 @@ Spec: [docs/LLD.md](docs/LLD.md).
 | `registry` | Parts (YAML), schematic symbols (SVG), SPICE models, block templates (YAML), bundle manifest |
 | `third_party/ngspice` | The pinned ngspice: native and WASM build scripts, patches, licence notes |
 | `apps/web` | Vite + React editor: store mirroring the WASM core, edit tools, ELK layout worker, SVG schematic with canvas overlays, scope, ngspice WASM sim worker |
-| `apps/api` | FastAPI service: anonymous sessions, projects and their op log (Postgres), generation jobs streamed over SSE from Redis Streams, the reaper; its image and migrations |
+| `apps/api` | FastAPI service: anonymous sessions, projects and their op log (Postgres), generation jobs streamed over SSE from Redis Streams, the reaper; the orchestrator (plan, compose, verify, repair) and its LLM gateway and prompts; its image and migrations |
 | `workers/sim_runner` | Simulation worker (arq): circuit-core netlists on the pinned native ngspice under rlimits, results cached in Redis; the native ngspice driver; its image |
 | `tools/sim` | Simulation tests for every part, every block template and the demo circuit; native vs WASM parity |
 | `tools/parity` | Cross-runtime parity gate: native vs WASM vs Python |
@@ -47,7 +47,7 @@ node crates/circuit-core-wasm/build.mjs    # browser package in crates/circuit-c
 cargo run -p circuit-core --example bundle_registry   # registry bundle (JSON, symbols.svg, model files) in target/registry
 .venv/Scripts/python -m pytest -q tools/sim           # every part + every template at 5 points + demo + native vs WASM parity
 .venv/Scripts/python -m pytest -q workers/sim_runner/tests   # the worker on Redis 7 (Docker) and native ngspice
-.venv/Scripts/python -m pytest -q apps/api/tests     # the API on Postgres 16 + pgvector and Redis 7 (Docker)
+.venv/Scripts/python -m pytest -q apps/api/tests     # the API on Postgres 16 + pgvector and Redis 7 (Docker); orchestrator jobs on recorded replies
 docker compose up -d --build                         # Postgres, Redis, migrations, API on :8000, sim_runner
 (cd apps/web && npx vitest run && npx tsc --noEmit)   # store, layout, schematic, sim worker; end to end on ngspice.wasm
 (cd apps/web && npm run dev)                          # editor on the demo circuit at http://localhost:5173
@@ -69,6 +69,13 @@ without Docker (CI sets `REQUIRE_DOCKER=1`), and so do the API tests.
 password. The API runs the latest migrations through the one-shot `migrate` service
 (`python -m tutor_api.db.migrate`).
 
+Generation needs an LLM provider: `LLM_PROVIDER` is `gemini`, `deepseek` or `openai` (key, endpoint and models from
+`<PROVIDER>_API_KEY`, `<PROVIDER>_BASE_URL`, `<PROVIDER>_MODEL_LARGE`/`_SMALL` or `<PROVIDER>_MODEL`; see
+`apps/api/tutor_api/llm/config.py`), `fake` with `LLM_FAKE_SCRIPT` (scripted replies, no network) or `replay` with `LLM_CASSETTE`;
+`LLM_FALLBACK_PROVIDER` is optional. Without `LLM_PROVIDER`, `/generate` answers 503.
+
+After changing a prompt (`apps/api/tutor_api/llm/prompts`) or an orchestrator test's script: `UPDATE_CASSETTES=1 pytest tests/test_orchestrator.py`
+in `apps/api`, and review the cassette diff (a changed `key` is a changed prompt).
 After changing a wire type: `tools/codegen/run.sh`, then commit the regenerated files.
 After a deliberate netlist change: `cargo insta review` (or `INSTA_UPDATE=always cargo test`) and review the diff.
 After a change that alters the Sallen-Key bench netlist: `SIM_UPDATE_SELFTEST=1 pytest workers/sim_runner/tests -k selftest`

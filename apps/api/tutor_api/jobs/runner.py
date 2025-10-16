@@ -119,7 +119,8 @@ class JobContext:
             await conn.execute(update(jobs).where(jobs.c.id == self.job_id).values(plan=plan))
 
     def add_usage(self, model: str, in_tokens: int, out_tokens: int) -> None:
-        self.model = model
+        """Tokens add up over the job's calls; `jobs.model` is the first model used (the planner's)."""
+        self.model = self.model or model
         self.in_tokens += in_tokens
         self.out_tokens += out_tokens
 

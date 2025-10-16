@@ -1,0 +1,53 @@
+{
+ "version": 1,
+ "interactions": [
+  {
+   "key": "77260adc6f311bdbae96bcc423f2af4d3f8ee3fa91f87963503e51bed0a7b3ea",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": " target \"b2.in\". An input port takes at most one link. Power and ground ports join through the shared rails by themselves; never link them.\n- uncovered: whatever the request needs that no template can build (a microcontroller, mains power, a motor driver). Empty when the templates cover everything.\n",
+   "response": {
+    "text": "{\"blocks\": [{\"id\": \"b1\", \"template\": \"rc_lowpass\", \"title\": \"Filter\", \"purpose\": \"The filter.\", \"targets\": [{\"name\": \"fc_hz\", \"value\": \"500k\"}]}], \"links\": [], \"uncovered\": []}",
+    "model": "fake-large",
+    "usage": {
+     "in_tokens": 3596,
+     "out_tokens": 44,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  },
+  {
+   "key": "5a45c6300b808c74d153d5318f979779d809cf1d2524387135477139de304b70",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": "ng.\n\nYour previous plan:\n{\"blocks\": [{\"id\": \"b1\", \"template\": \"rc_lowpass\", \"title\": \"Filter\", \"purpose\": \"The filter.\", \"targets\": [{\"name\": \"fc_hz\", \"value\": \"500k\"}]}], \"links\": [], \"uncovered\": []}\n\nIt has these problems. Fix every one:\n- b1 (rc_lowpass): Cutoff frequency must be 10Hz to 100kHz\n",
+   "response": {
+    "text": "{\"blocks\": [{\"id\": \"b1\", \"template\": \"rc_lowpass\", \"title\": \"Filter\", \"purpose\": \"The filter.\", \"targets\": [{\"name\": \"fc_hz\", \"value\": \"500k\"}]}], \"links\": [], \"uncovered\": []}",
+    "model": "fake-large",
+    "usage": {
+     "in_tokens": 3670,
+     "out_tokens": 44,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  },
+  {
+   "key": "5a45c6300b808c74d153d5318f979779d809cf1d2524387135477139de304b70",
+   "kind": "plan",
+   "tier": "large",
+   "user_tail": "ng.\n\nYour previous plan:\n{\"blocks\": [{\"id\": \"b1\", \"template\": \"rc_lowpass\", \"title\": \"Filter\", \"purpose\": \"The filter.\", \"targets\": [{\"name\": \"fc_hz\", \"value\": \"500k\"}]}], \"links\": [], \"uncovered\": []}\n\nIt has these problems. Fix every one:\n- b1 (rc_lowpass): Cutoff frequency must be 10Hz to 100kHz\n",
+   "response": {
+    "text": "{\"blocks\": [{\"id\": \"b1\", \"template\": \"rc_lowpass\", \"title\": \"Filter\", \"purpose\": \"The filter.\", \"targets\": [{\"name\": \"fc_hz\", \"value\": \"500k\"}]}], \"links\": [], \"uncovered\": []}",
+    "model": "fake-large",
+    "usage": {
+     "in_tokens": 3670,
+     "out_tokens": 44,
+     "cached_tokens": 0
+    },
+    "finish_reason": "stop"
+   }
+  }
+ ]
+}

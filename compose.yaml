@@ -1,6 +1,9 @@
 # Local stack (LLD §2 deployables): `docker compose up -d --build`, then the API is on :8000.
 # Needs AUTH_TOKEN_SECRET (and optionally POSTGRES_PASSWORD) in .env or the shell. Published ports
 # are loopback only: these services have development credentials.
+# Generation follows LLM_PROVIDER from .env (unset: off, /generate answers 503). With
+# LLM_PROVIDER=fake it answers from apps/api/fake/script.json (mounted read-only), with no network
+# calls; a real provider takes its keys and models from the variables passed below.
 # The simulation worker sits on an internal network with Redis only: no route out (LLD §8, §14).
 name: circuit-forge
 
@@ -55,6 +58,20 @@ services:
       <<: *api-env
       AUTH_TOKEN_SECRET: ${AUTH_TOKEN_SECRET:?set AUTH_TOKEN_SECRET in .env (a random string of 32+ characters)}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      LLM_FALLBACK_PROVIDER: ${LLM_FALLBACK_PROVIDER:-}
+      LLM_FAKE_SCRIPT: /opt/fake/script.json
+      LLM_MODEL_LARGE: ${LLM_MODEL_LARGE:-}
+      LLM_MODEL_SMALL: ${LLM_MODEL_SMALL:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+    volumes: ["./apps/api/fake:/opt/fake:ro"]
     ports: ["127.0.0.1:8000:8000", "[::1]:8000:8000"]
     depends_on:
       migrate: { condition: service_completed_successfully }

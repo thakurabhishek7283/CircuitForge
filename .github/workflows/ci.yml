@@ -112,9 +112,11 @@ jobs:
           npx tsc --noEmit
           npx vitest run
           npm run build
-      # The editing flows in a real browser, on the bundle just built. Edge is preinstalled on
-      # the Ubuntu runners, so no browser is downloaded.
-      - name: Browser tests (Playwright on the runner's Edge)
+      # The editing flows in a real browser, on the bundle just built, with the API down; then the
+      # generation flows against the real API (tools/e2e/stack.py: Postgres and Redis in Docker, the
+      # sim worker on the native ngspice, scripted model replies). Edge is preinstalled on the
+      # Ubuntu runners, so no browser is downloaded.
+      - name: Browser tests (Playwright on the runner's Edge; editing offline, generation on the API)
         working-directory: apps/web
         run: |
           microsoft-edge --version
@@ -140,6 +142,7 @@ jobs:
       SIM_RUNNER_IMAGE: circuit-forge/sim-runner:ci
       API_IMAGE: circuit-forge/api:ci
       AUTH_TOKEN_SECRET: ci-only-secret-0123456789abcdefghijklmnopqrstuvwxyz
+      LLM_PROVIDER: fake  # apps/api/fake/script.json, mounted by compose: no network calls
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v4
@@ -175,5 +178,16 @@ jobs:
           project=$(curl -sf -X POST -H "Authorization: Bearer $token" http://127.0.0.1:8000/v1/projects | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
           curl -sf -H "Authorization: Bearer $token" "http://127.0.0.1:8000/v1/projects/$project" | python3 -c 'import json,sys; s=json.load(sys.stdin); assert s["circuit"]["rev"] == 0, s'
           curl -sf http://127.0.0.1:8000/readyz
+      # A scripted generation through the containers: the LLM settings and the fake script reach
+      # the read-only API, and the sandboxed worker simulates every block's bench.
+      - name: A generation job runs through the stack (LLM_PROVIDER=fake)
+        run: |
+          auth="Authorization: Bearer $(curl -sf -X POST http://127.0.0.1:8000/v1/auth/anonymous | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+          project=$(curl -sf -X POST -H "$auth" http://127.0.0.1:8000/v1/projects | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          job=$(curl -sf -X POST -H "$auth" -H 'Content-Type: application/json' -d '{"prompt": "a filtered test signal"}'             "http://127.0.0.1:8000/v1/projects/$project/generate" | python3 -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
+          curl -sf --max-time 60 -H "$auth" "http://127.0.0.1:8000/v1/jobs/$job/events" > events.txt
+          grep '^event:' events.txt | sort | uniq -c
+          tail -n 4 events.txt | grep -q '^event: done'
+          curl -sf -H "$auth" "http://127.0.0.1:8000/v1/projects/$project" | python3 -c 'import json,sys; s=json.load(sys.stdin); assert list(s["circuit"]["blocks"]) == ["b1", "b2", "b3"], s["circuit"]["blocks"]'
       - if: always()
         run: docker compose logs && docker compose down -v

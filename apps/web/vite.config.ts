@@ -8,12 +8,17 @@
 // the manifest's current version). Set VITE_NGSPICE_URL / VITE_REGISTRY_URL to serve them from a
 // CDN instead; that part is then left out of dist/. With REQUIRE_VERIFIED=1 (CI) the build fails
 // unless the verified stamp names this exact bundle (LLD §12 step 2: verified_registry_version).
+//
+// The API: the app calls the same origin (/v1) unless VITE_API_URL is set; the dev and preview
+// servers proxy /v1 to API_ORIGIN (default http://127.0.0.1:8000, the compose stack), so locally the
+// browser needs no CORS. With nothing listening there the editor works offline (LLD §14);
+// API_ORIGIN=none answers every /v1 request 503 at once (the browser tests' "API down").
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { extname, join, normalize, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
-import { defineConfig, loadEnv, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin, type ProxyOptions } from "vite";
 
 const app = fileURLToPath(new URL(".", import.meta.url));
 const repo = join(app, "../..");
@@ -44,6 +49,20 @@ function files(dir: string): string[] {
     const path = join(dir, name);
     return statSync(path).isDirectory() ? files(path) : [path];
   });
+}
+
+/** API_ORIGIN=none: the API is down, as a gateway in front of it would say. */
+function apiDown(): Plugin {
+  const down = (req: { url?: string }, res: { statusCode: number; end: () => void }, next: () => void) => {
+    if (!req.url?.startsWith("/v1/")) return next();
+    res.statusCode = 503;
+    res.end();
+  };
+  return {
+    name: "circuit-forge-api-down",
+    configureServer: (server) => void server.middlewares.use(down),
+    configurePreviewServer: (server) => void server.middlewares.use(down),
+  };
 }
 
 function staticAssets(mounts: Mount[]): Plugin {
@@ -109,13 +128,16 @@ export default defineConfig(({ mode }) => {
       check: () => (process.env.REQUIRE_VERIFIED ? verified(bundle, stamp) : null),
     });
   }
+  const apiOrigin = process.env.API_ORIGIN ?? "http://127.0.0.1:8000";
+  const proxy: Record<string, ProxyOptions> = apiOrigin === "none" ? {} : { "/v1": { target: apiOrigin, changeOrigin: true } };
   return {
-    plugins: [react(), staticAssets(mounts)],
+    plugins: [react(), staticAssets(mounts), ...(apiOrigin === "none" ? [apiDown()] : [])],
     resolve: {
       // circuit-core's browser build (node crates/circuit-core-wasm/build.mjs); Vite emits its .wasm.
       alias: { "@tutor/core": join(repo, "crates/circuit-core-wasm/pkg/core.js") },
     },
-    server: { fs: { allow: [repo] } },
+    server: { fs: { allow: [repo] }, proxy },
+    preview: { proxy },
     worker: { format: "es" },
     build: { target: "es2022", sourcemap: true },
     test: { include: ["src/**/*.test.{ts,tsx}"] },

@@ -13,12 +13,13 @@ Spec: [docs/LLD.md](docs/LLD.md).
 | `apps/web/src/gen`, `apps/api/tutor_api/models` | TS types / Pydantic models generated from the schemas (do not edit) |
 | `registry` | Parts (YAML), schematic symbols (SVG), SPICE models, block templates (YAML), bundle manifest |
 | `third_party/ngspice` | The pinned ngspice: native and WASM build scripts, patches, licence notes |
-| `apps/web` | Vite + React editor: store mirroring the WASM core, edit tools, ELK layout worker, SVG schematic with canvas overlays, scope, ngspice WASM sim worker |
-| `apps/api` | FastAPI service: anonymous sessions, projects and their op log (Postgres), generation jobs streamed over SSE from Redis Streams, the reaper; the orchestrator (plan, compose, verify, repair) and its LLM gateway and prompts; its image and migrations |
+| `apps/web` | Vite + React editor: store mirroring the WASM core, edit tools, ELK layout worker, SVG schematic with canvas overlays, scope, ngspice WASM sim worker; projects synced to the API, generation streamed over SSE and played by the AnimationDirector |
+| `apps/api` | FastAPI service: anonymous sessions, projects and their op log (Postgres), generation jobs streamed over SSE from Redis Streams, the reaper; the orchestrator (plan, compose, verify, repair) and its LLM gateway and prompts; its image and migrations; `fake/script.json`, the scripted model replies of `LLM_PROVIDER=fake` |
 | `workers/sim_runner` | Simulation worker (arq): circuit-core netlists on the pinned native ngspice under rlimits, results cached in Redis; the native ngspice driver; its image |
 | `tools/sim` | Simulation tests for every part, every block template and the demo circuit; native vs WASM parity |
 | `tools/parity` | Cross-runtime parity gate: native vs WASM vs Python |
 | `tools/codegen` | Schema → TS / Pydantic generation |
+| `tools/e2e` | `stack.py`: the real API on testcontainers with the sim worker and scripted model replies, for the browser tests |
 
 ## Setup
 
@@ -50,15 +51,21 @@ cargo run -p circuit-core --example bundle_registry   # registry bundle (JSON, s
 .venv/Scripts/python -m pytest -q apps/api/tests     # the API on Postgres 16 + pgvector and Redis 7 (Docker); orchestrator jobs on recorded replies
 docker compose up -d --build                         # Postgres, Redis, migrations, API on :8000, sim_runner
 (cd apps/web && npx vitest run && npx tsc --noEmit)   # store, layout, schematic, sim worker; end to end on ngspice.wasm
-(cd apps/web && npm run dev)                          # editor on the demo circuit at http://localhost:5173
+(cd apps/web && npm run dev)                          # editor at http://localhost:5173; /v1 proxied to API_ORIGIN (default :8000)
 (cd apps/web && npm run build)                        # static bundle in apps/web/dist (app + ngspice + registry)
-(cd apps/web && npm run e2e)                          # browser tests on that bundle (system Edge; PW_CHANNEL=chrome for Chrome)
+(cd apps/web && npm run e2e)                          # browser tests on that bundle (system Edge; PW_CHANNEL=chrome for Chrome);
+                                                     # the generation flows start tools/e2e/stack.py (Docker, ngspice); E2E_API=0 skips them;
+                                                     # 4 workers locally (E2E_WORKERS)
 ```
 
 The editor needs the browser build of the core, the registry bundle and `ngspice.wasm` (above). The dev
 server serves the last two from `target/registry` and `third_party/ngspice/dist/wasm`; `npm run build` copies
 them into `dist/`. For a CDN, set `VITE_REGISTRY_URL` and/or `VITE_NGSPICE_URL` at build time and that part is
-left out of `dist/`. `/#new` opens an empty circuit. In development the open editor is on `window.circuitForge`.
+left out of `dist/`. The app calls its API on the same origin (`/v1`): the dev and preview servers proxy it to `API_ORIGIN`
+(default `http://127.0.0.1:8000`, the compose stack); a deployment routes `/v1` to the API or builds with `VITE_API_URL`
+(and sets the API's `CORS_ORIGINS`). No hash opens your last project (or a new one), `#new` a new project, `#p/<id>` a
+project, `#demo` the demo circuit (not saved). Without the API the editor still edits and simulates, but saves nothing and
+cannot generate. In development the open editor is on `window.circuitForge`.
 
 The simulation tests use the bindings and registry bundle that `tools/parity/run.sh` builds. They skip
 when ngspice is not built; CI sets `REQUIRE_NGSPICE=1` so they cannot skip there. The worker tests also skip
@@ -72,7 +79,8 @@ password. The API runs the latest migrations through the one-shot `migrate` serv
 Generation needs an LLM provider: `LLM_PROVIDER` is `gemini`, `deepseek` or `openai` (key, endpoint and models from
 `<PROVIDER>_API_KEY`, `<PROVIDER>_BASE_URL`, `<PROVIDER>_MODEL_LARGE`/`_SMALL` or `<PROVIDER>_MODEL`; see
 `apps/api/tutor_api/llm/config.py`), `fake` with `LLM_FAKE_SCRIPT` (scripted replies, no network) or `replay` with `LLM_CASSETTE`;
-`LLM_FALLBACK_PROVIDER` is optional. Without `LLM_PROVIDER`, `/generate` answers 503.
+`LLM_FALLBACK_PROVIDER` is optional. Without `LLM_PROVIDER`, `/generate` answers 503. `docker compose` passes these from `.env`
+and mounts `apps/api/fake`, so `LLM_PROVIDER=fake` generates from `apps/api/fake/script.json` with no network call.
 
 After changing a prompt (`apps/api/tutor_api/llm/prompts`) or an orchestrator test's script: `UPDATE_CASSETTES=1 pytest tests/test_orchestrator.py`
 in `apps/api`, and review the cassette diff (a changed `key` is a changed prompt).

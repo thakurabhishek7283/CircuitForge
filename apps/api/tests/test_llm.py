@@ -298,3 +298,29 @@ def test_fake_provider_from_a_script_file(tmp_path):
     gw = gateway_from_env({"LLM_PROVIDER": "fake", "LLM_FAKE_SCRIPT": str(path)})
     resp = asyncio.run(gw.complete(REQ))
     assert json.loads(resp.text) == {"blocks": []} and resp.model == "fake-large"
+
+
+async def test_fake_rules_answer_by_what_the_request_says():
+    """Rules (the browser tests' script): matched on the user turn, before the queues, not used up
+    unless they say how often; an error rule raises a fresh ProviderError each time."""
+    fake = FakeProvider({
+        "rules": [
+            {"kind": "plan", "when": ["the request", "flaky"], "error": {"code": "server_error", "retryable": True}, "times": 1},
+            {"kind": "plan", "when": ["the request"], "reply": {"n": "rule"}},
+            {"kind": "narrate", "when": [], "reply": "Slow words.", "delay_s": 0.05},
+        ],
+        "plan": [{"n": "queue"}],
+    })
+    flaky = LlmRequest("plan", "large", "S", "the request, flaky")
+    with pytest.raises(ProviderError) as first:
+        await fake.complete(flaky)
+    assert first.value.code == "server_error" and first.value.retryable
+    assert json.loads((await fake.complete(flaky)).text) == {"n": "rule"}  # the error rule is used up
+    assert json.loads((await fake.complete(REQ)).text) == {"n": "rule"}
+    assert json.loads((await fake.complete(REQ)).text) == {"n": "rule"}
+    assert json.loads((await fake.complete(LlmRequest("plan", "large", "S", "other"))).text) == {"n": "queue"}
+    with pytest.raises(ProviderError, match="script_exhausted"):
+        await fake.complete(LlmRequest("plan", "large", "S", "other"))
+    t0 = asyncio.get_running_loop().time()
+    assert (await fake.complete(LlmRequest("narrate", "small", "S", "anything"))).text == "Slow words."
+    assert asyncio.get_running_loop().time() - t0 >= 0.04

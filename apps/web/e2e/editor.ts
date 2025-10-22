@@ -12,10 +12,23 @@ export class EditorPage {
 
   constructor(page: Page) {
     this.page = page;
+    // E2E_CONSOLE=1: the page's console, errors and how long the workers' assets took to load.
+    if (process.env.E2E_CONSOLE) {
+      const t0 = Date.now();
+      page.on("console", (m) => console.log(`[page +${Date.now() - t0}ms] ${m.type()}: ${m.text().slice(0, 200)}`));
+      page.on("pageerror", (e) => console.log(`[page +${Date.now() - t0}ms] pageerror: ${e.message}`));
+      const started = new Map<string, number>();
+      page.on("request", (r) => started.set(r.url(), Date.now()));
+      page.on("requestfinished", (r) => {
+        const ms = Date.now() - (started.get(r.url()) ?? Date.now());
+        if (/worker|wasm|ngspice|registry/.test(r.url())) console.log(`[page +${Date.now() - t0}ms] loaded in ${ms}ms: ${new URL(r.url()).pathname}`);
+      });
+      page.on("requestfailed", (r) => console.log(`[page +${Date.now() - t0}ms] requestfailed: ${r.url()} ${r.failure()?.errorText}`));
+    }
   }
 
   async open(start: "new" | "demo"): Promise<void> {
-    await this.page.goto(start === "new" ? "/#new" : "/");
+    await this.page.goto(start === "new" ? "/#new" : "/#demo");
     await expect(this.page.locator(".palette")).toBeVisible();
     if (start === "demo") await this.simulated();
   }

@@ -158,7 +158,7 @@ main {
 
 .center {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   min-width: 0;
   min-height: 0;
 }
@@ -169,7 +169,7 @@ main {
     grid-template-rows: 1fr auto;
   }
 
-  .inspector {
+  .side {
     grid-column: 1 / -1;
     border-left: none;
     border-top: 1px solid var(--line);
@@ -829,4 +829,298 @@ button.primary {
   width: 0;
   border-left: 1px solid var(--dot);
   pointer-events: none;
+}
+
+/* Generation (LLD §10): the generate bar, the lesson, ghosts and the reveal. */
+.side {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.side .inspector {
+  flex: 1 1 auto;
+  min-height: 0;
+  border-left: none;
+}
+
+fieldset.plain {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--volt-bg);
+  color: var(--volt-text);
+  border-bottom: 1px solid var(--line);
+}
+
+.banner span {
+  flex: 1;
+  min-width: 0;
+}
+
+.app:has(.banner) {
+  grid-template-rows: auto auto 1fr;
+}
+
+.save-status {
+  align-self: center;
+  margin-left: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.save-status.bad {
+  color: var(--bad);
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.generate {
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+  padding: 8px 12px;
+  min-width: 0;
+}
+
+.generate form {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.generate .prompt {
+  flex: 1;
+  font: inherit;
+  padding: 4px 8px;
+}
+
+.generate select {
+  font: inherit;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.progress {
+  margin-top: 8px;
+}
+
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.progress .status {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.progress[data-phase="failed"] .status {
+  color: var(--bad);
+}
+
+.progress .error-detail {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.progress .spacer {
+  flex: 1;
+}
+
+.progress .muted {
+  font-weight: normal;
+  color: var(--muted);
+}
+
+.progress .speed {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.progress .speed button {
+  padding: 2px 6px;
+  font-size: 12px;
+}
+
+.progress .plan {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.progress .plan li[data-status="building"] {
+  color: var(--accent);
+}
+
+.progress .plan li[data-status="committed"] {
+  color: var(--text);
+}
+
+.progress .plan li[data-status="discarded"] {
+  text-decoration: line-through;
+}
+
+.progress .plan .mark {
+  margin-right: 4px;
+}
+
+.lesson {
+  flex: 0 1 auto;
+  max-height: 45%;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+  padding: 8px 16px 12px;
+}
+
+.lesson h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.lesson ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lesson li {
+  margin: 0 0 8px;
+  line-height: 1.45;
+}
+
+.lesson li[data-kind="note"],
+.lesson li[data-kind="repair"] {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.lesson li[data-kind="repair"] .text::before {
+  content: "⚠ ";
+}
+
+.lesson li.speaking .text {
+  background: var(--volt-bg);
+}
+
+.lesson .block-ref {
+  display: block;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+/* Parts grow from their own centre as they appear. */
+.part {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* A block whose ops are playing: its frame marches; then it settles to the usual frame. */
+.block[data-building] rect {
+  stroke: var(--accent);
+  animation: march 0.6s linear infinite;
+}
+
+.block.speaking rect {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+/* Its checks show once the block is complete (LLD §10: block.commit shows the spec badge). */
+.block[data-building] .badge {
+  visibility: hidden;
+}
+
+.block .badge.bench {
+  font-style: italic;
+}
+
+@keyframes march {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+/* The overlays would give away wires that are not drawn yet. */
+.schematic-wrap[data-revealing] .overlay {
+  visibility: hidden;
+}
+
+.ghost rect {
+  fill: color-mix(in srgb, var(--accent) 6%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+  animation: ghost 1.6s ease-in-out infinite;
+}
+
+.ghost text {
+  font-size: 11px;
+  fill: var(--muted);
+}
+
+.ghost .title {
+  font-weight: 600;
+}
+
+.ghost .status {
+  font-size: 12px;
+  fill: var(--accent);
+}
+
+.ghost[data-state="repairing"] .status,
+.ghost .repair {
+  fill: var(--bad);
+}
+
+.ghost-port line {
+  stroke: var(--accent);
+  stroke-dasharray: 3 3;
+}
+
+.ghost-port text {
+  font: 9px var(--mono);
+}
+
+@keyframes ghost {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ghost rect,
+  .block[data-building] rect {
+    animation: none;
+  }
 }

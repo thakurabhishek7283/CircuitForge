@@ -12,19 +12,23 @@ import { InsertBlockPanel } from "./InsertBlock.tsx";
 export function Inspector() {
   const selection = useCircuit((s) => s.selection);
   const inserting = useUi((s) => s.inserting);
+  const readOnly = useCircuit((s) => s.mode === "generating");
   return (
     <aside className="inspector">
-      {inserting ? (
-        <InsertBlockPanel key={inserting} templateId={inserting} />
-      ) : !selection ? (
-        <Overview />
-      ) : selection.kind === "part" ? (
-        <PartPanel refdes={selection.refdes} />
-      ) : selection.kind === "net" ? (
-        <NetPanel id={selection.id} />
-      ) : (
-        <BlockPanel id={selection.id} />
-      )}
+      {/* Read-only while a generation job runs (LLD §4: single writer); selection still works. */}
+      <fieldset className="plain" disabled={readOnly}>
+        {inserting ? (
+          <InsertBlockPanel key={inserting} templateId={inserting} />
+        ) : !selection ? (
+          <Overview />
+        ) : selection.kind === "part" ? (
+          <PartPanel refdes={selection.refdes} />
+        ) : selection.kind === "net" ? (
+          <NetPanel id={selection.id} />
+        ) : (
+          <BlockPanel id={selection.id} />
+        )}
+      </fieldset>
     </aside>
   );
 }

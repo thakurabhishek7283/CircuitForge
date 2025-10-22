@@ -1,0 +1,78 @@
+{
+  "_comment": "Scripted model replies for LLM_PROVIDER=fake (tutor_api/llm/fake.py): the browser end-to-end flows and the local compose stack. Every prompt gets the same three-block circuit (a 300 Hz sine, an RC low-pass whose first draft has a wrong pin, a follower); a word in the prompt picks a variant: e2e-cancel and e2e-reload hold the filter's composer, e2e-retry fails the planner once, e2e-unsupported asks for what no template builds.",
+  "rules": [
+    {
+      "kind": "plan",
+      "when": ["e2e-retry"],
+      "error": {"code": "unavailable", "message": "scripted planner outage", "retryable": false},
+      "times": 1
+    },
+    {
+      "kind": "plan",
+      "when": ["e2e-unsupported"],
+      "reply": {"blocks": [], "links": [], "uncovered": ["a microcontroller that reads the temperature"]}
+    },
+    {
+      "kind": "plan",
+      "when": [],
+      "reply": {
+        "blocks": [
+          {"id": "b1", "template": "sine_source", "title": "Test signal", "purpose": "V1 makes a 300 Hz sine wave to test the filter with.",
+           "targets": [{"name": "freq_hz", "value": "300"}]},
+          {"id": "b2", "template": "rc_lowpass", "title": "Low-pass filter", "purpose": "R1 and C1 let low frequencies through and send high ones to ground.",
+           "targets": [{"name": "fc_hz", "value": "2k"}]},
+          {"id": "b3", "template": "voltage_follower", "title": "Output buffer", "purpose": "U1 copies the filtered signal so a load cannot change the corner frequency.",
+           "targets": []}
+        ],
+        "links": [{"source": "b1.out", "target": "b2.in"}, {"source": "b2.out", "target": "b3.in"}],
+        "uncovered": []
+      }
+    },
+    {
+      "kind": "narrate",
+      "when": [],
+      "reply": "This circuit filters a test signal. A sine source drives an RC low-pass filter, which passes slow signals and shunts fast ones to ground. An op-amp follower then buffers the result."
+    },
+    {
+      "kind": "compose",
+      "when": ["e2e-cancel", "Step: compose block b2"],
+      "delay_s": 60,
+      "reply": {"use_template": true, "parts": [], "nets": []}
+    },
+    {
+      "kind": "compose",
+      "when": ["e2e-reload", "Step: compose block b2"],
+      "delay_s": 4,
+      "reply": {"use_template": true, "parts": [], "nets": []}
+    },
+    {
+      "kind": "compose",
+      "when": ["Step: compose block b2", "Your previous attempt:"],
+      "reply": {
+        "use_template": false,
+        "parts": [
+          {"ref": "R1", "part": "resistor_th", "params": [{"name": "resistance", "value": "8.2k"}]},
+          {"ref": "C1", "part": "cap_film", "params": [{"name": "capacitance", "value": "10n"}]}
+        ],
+        "nets": [{"name": "in", "pins": ["R1.1"]}, {"name": "out", "pins": ["R1.2", "C1.1"]}, {"name": "gnd", "pins": ["C1.2"]}]
+      }
+    },
+    {
+      "kind": "compose",
+      "when": ["Step: compose block b2"],
+      "reply": {
+        "use_template": false,
+        "parts": [
+          {"ref": "R1", "part": "resistor_th", "params": [{"name": "resistance", "value": "8.2k"}]},
+          {"ref": "C1", "part": "cap_film", "params": [{"name": "capacitance", "value": "10n"}]}
+        ],
+        "nets": [{"name": "in", "pins": ["R1.1"]}, {"name": "out", "pins": ["R1.2", "C1.X"]}, {"name": "gnd", "pins": ["C1.2"]}]
+      }
+    },
+    {
+      "kind": "compose",
+      "when": [],
+      "reply": {"use_template": true, "parts": [], "nets": []}
+    }
+  ]
+}

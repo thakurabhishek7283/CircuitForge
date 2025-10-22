@@ -73,6 +73,7 @@ def database_url() -> str:
     )
     with pg:
         url = f"postgresql+asyncpg://tutor:tutor@{pg.get_container_host_ip()}:{pg.get_exposed_port(5432)}/tutor"
+        migrate.wait_until_ready(url)
         migrate.upgrade(url)
         yield url
 

@@ -5,6 +5,7 @@ import { registryAssetUrl, registryBundleUrl } from "../config.ts";
 import type { Circuit, Registry } from "../gen/contract.ts";
 import { type CircuitStore, createCircuitStore } from "../store/circuitStore.ts";
 import { type Edits, createEdits } from "../store/edits.ts";
+import { type GenerationStore, createGenerationStore } from "../store/generationStore.ts";
 import { type UiStore, createUiStore } from "../store/uiStore.ts";
 import { Playback } from "../views/playback.ts";
 import { attachLayout } from "../store/layoutSync.ts";
@@ -16,6 +17,8 @@ export interface Editor {
   store: CircuitStore;
   ui: UiStore;
   edits: Edits;
+  /** Generation progress, ghosts and narration (empty for a circuit that is not a server project). */
+  gen: GenerationStore;
   registry: Registry;
   sprite: string;
   /** The core's unit parser, for value fields: `{"ok": Quantity} | {"err": string}`. */
@@ -51,12 +54,21 @@ export async function openEditor(snapshotJson: string): Promise<Editor> {
 
   const layout = new LayoutClient(layoutRegistry(registry));
   const sim = new SimClient(version); // ngspice.wasm loads on the first run, after first paint
-  const stops = [attachLayout(store, (input) => layout.request(input)), attachSimulation(store, session, sim, { evaluateChecks })];
+  const ui = createUiStore();
+  const stops = [
+    attachLayout(store, (input) => layout.request(input)),
+    attachSimulation(store, session, sim, { evaluateChecks }),
+    // A generation job starting puts the edit tools away (the circuit is read-only until it ends).
+    store.subscribe((s, prev) => {
+      if (s.mode === "generating" && prev.mode !== "generating") ui.setState({ tool: { kind: "select" }, inserting: null });
+    }),
+  ];
 
   return {
     store,
-    ui: createUiStore(),
+    ui,
     edits: createEdits(store, session),
+    gen: createGenerationStore(),
     registry,
     sprite,
     parseQuantity,
